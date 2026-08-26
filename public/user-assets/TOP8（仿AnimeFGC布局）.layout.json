@@ -1,0 +1,254 @@
+{
+  "id": "animefgc-top8-v1",
+  "name": "TOP8（仿AnimeFGC布局）",
+  "description": "左冠军大图 + 右 2–8 名竖列 · 仿 GBVS World Tour / AnimeFGC 赛事结果图",
+  "width": 1920,
+  "height": 1080,
+  "textCoordsRelative": true,
+  "headerStyleId": "compact",
+  "recommendedHeaderStyleId": "compact",
+  "recommendedPlayerIdStyleId": "hang",
+  "recommendedExtraCharStyleId": "bottomRow",
+  "recommendedAccent": "#f5c518",
+  "recommendedBackground": "#141418",
+  "backgroundImageDataUrl": "/user-assets/animefgc-top8-bg-1920x1080.jpg",
+  "background": "#141418",
+  "backgroundDim": 0.12,
+  "customLogoDataUrl": "/user-assets/ebi-club-logo.png",
+  "titleFontId": "noto-sans",
+  "playerFontId": "noto-sans",
+  "rankFontId": "noto-sans",
+  "previewExtraCount": 0,
+  "recommendedPlayerIdLayout": {
+    "plateHeight": 54,
+    "hangGap": 0,
+    "veilStartRatio": 0.5,
+    "veilOpacity": 0.75
+  },
+  "header": {
+    "x": 0,
+    "y": 16,
+    "w": 1920,
+    "h": 84,
+    "backgroundOpacity": 0,
+    "backgroundColor": "#000000",
+    "borderRadius": 0,
+    "accentBarHeight": 0
+  },
+  "headerTexts": {
+    "gameLogo": { "x": 36, "y": 10, "w": 260, "h": 64, "visible": true },
+    "customLogo": { "x": 1620, "y": 10, "w": 260, "h": 64, "visible": true },
+    "tournamentName": {
+      "x": 400,
+      "y": 16,
+      "w": 1120,
+      "h": 44,
+      "fontSize": 34,
+      "fontWeight": "800",
+      "color": "#ffffff",
+      "align": "center",
+      "visible": true
+    },
+    "subtitle": {
+      "x": 400,
+      "y": 56,
+      "w": 1120,
+      "h": 22,
+      "fontSize": 16,
+      "fontWeight": "600",
+      "color": "rgba(255,255,255,0.75)",
+      "align": "center",
+      "visible": true
+    }
+  },
+  "defaultBoxStyle": {
+    "theme": "image",
+    "frameImageUrl": "/user-assets/animefgc-top8-frame-list-696x134-overlay.png",
+    "fillOpacity": 0.88,
+    "fillColor": "#0a0a0e",
+    "borderWidth": 0
+  },
+  "slots": [
+    {
+      "playerIndex": 0,
+      "x": 0,
+      "y": 100,
+      "w": 1216,
+      "h": 968,
+      "focusX": 0.44,
+      "focusY": 0.34,
+      "nameSize": 36,
+      "placeSize": 64,
+      "radius": 0,
+      "boxStyle": {
+        "theme": "image",
+        "frameImageUrl": "/user-assets/animefgc-top8-frame-champion-1216x968-overlay.png",
+        "fillOpacity": 0.08,
+        "borderWidth": 0
+      },
+      "textLayout": {
+        "rank": {
+          "x": 28,
+          "y": 768,
+          "w": 180,
+          "h": 80,
+          "fontSize": 58,
+          "fontWeight": "800",
+          "color": "#f5c518",
+          "contentSource": "rank"
+        },
+        "name": {
+          "x": 28,
+          "y": 896,
+          "w": 480,
+          "h": 48,
+          "fontSize": 34,
+          "fontWeight": "800",
+          "color": "#111111",
+          "contentSource": "tag"
+        },
+        "extras": [
+          {
+            "x": 28,
+            "y": 862,
+            "w": 220,
+            "h": 22,
+            "fontSize": 13,
+            "fontWeight": "700",
+            "color": "#ffffff",
+            "contentSource": "prefix",
+            "visible": true
+          }
+        ]
+      }
+    },
+    {
+      "playerIndex": 1,
+      "x": 1224,
+      "y": 100,
+      "w": 696,
+      "h": 134,
+      "focusX": 0.3,
+      "focusY": 0.4,
+      "nameSize": 22,
+      "placeSize": 24,
+      "radius": 0,
+      "textLayout": {
+        "rank": { "x": -58, "y": 46, "w": 52, "h": 42, "fontSize": 24, "fontWeight": "800", "color": "#d4d4d4", "contentSource": "rank" },
+        "name": { "x": 418, "y": 50, "w": 264, "h": 34, "fontSize": 22, "fontWeight": "800", "color": "#111111", "contentSource": "tag" },
+        "twitter": { "x": 418, "y": 86, "w": 264, "h": 20, "fontSize": 12, "fontWeight": "500", "color": "#333333", "contentSource": "twitter" },
+        "extras": [{ "x": 480, "y": 16, "w": 200, "h": 18, "fontSize": 10, "fontWeight": "700", "color": "#eeeeee", "align": "right", "contentSource": "prefix", "visible": true }]
+      }
+    },
+    {
+      "playerIndex": 2,
+      "x": 1224,
+      "y": 239,
+      "w": 696,
+      "h": 134,
+      "focusX": 0.3,
+      "focusY": 0.4,
+      "nameSize": 22,
+      "placeSize": 24,
+      "radius": 0,
+      "textLayout": {
+        "rank": { "x": -58, "y": 46, "w": 52, "h": 42, "fontSize": 24, "fontWeight": "800", "color": "#cd7f32", "contentSource": "rank" },
+        "name": { "x": 418, "y": 50, "w": 264, "h": 34, "fontSize": 22, "fontWeight": "800", "color": "#111111", "contentSource": "tag" },
+        "twitter": { "x": 418, "y": 86, "w": 264, "h": 20, "fontSize": 12, "fontWeight": "500", "color": "#333333", "contentSource": "twitter" },
+        "extras": [{ "x": 480, "y": 16, "w": 200, "h": 18, "fontSize": 10, "fontWeight": "700", "color": "#eeeeee", "align": "right", "contentSource": "prefix", "visible": true }]
+      }
+    },
+    {
+      "playerIndex": 3,
+      "x": 1224,
+      "y": 378,
+      "w": 696,
+      "h": 134,
+      "focusX": 0.3,
+      "focusY": 0.4,
+      "nameSize": 22,
+      "placeSize": 24,
+      "radius": 0,
+      "textLayout": {
+        "rank": { "x": -58, "y": 46, "w": 52, "h": 42, "fontSize": 24, "fontWeight": "800", "color": "#ffffff", "contentSource": "rank" },
+        "name": { "x": 418, "y": 50, "w": 264, "h": 34, "fontSize": 22, "fontWeight": "800", "color": "#111111", "contentSource": "tag" },
+        "twitter": { "x": 418, "y": 86, "w": 264, "h": 20, "fontSize": 12, "fontWeight": "500", "color": "#333333", "contentSource": "twitter" },
+        "extras": [{ "x": 480, "y": 16, "w": 200, "h": 18, "fontSize": 10, "fontWeight": "700", "color": "#eeeeee", "align": "right", "contentSource": "prefix", "visible": true }]
+      }
+    },
+    {
+      "playerIndex": 4,
+      "x": 1224,
+      "y": 517,
+      "w": 696,
+      "h": 134,
+      "focusX": 0.3,
+      "focusY": 0.4,
+      "nameSize": 22,
+      "placeSize": 24,
+      "radius": 0,
+      "textLayout": {
+        "rank": { "x": -58, "y": 46, "w": 52, "h": 42, "fontSize": 24, "fontWeight": "800", "color": "#ffffff", "contentSource": "rank" },
+        "name": { "x": 418, "y": 50, "w": 264, "h": 34, "fontSize": 22, "fontWeight": "800", "color": "#111111", "contentSource": "tag" },
+        "twitter": { "x": 418, "y": 86, "w": 264, "h": 20, "fontSize": 12, "fontWeight": "500", "color": "#333333", "contentSource": "twitter" },
+        "extras": [{ "x": 480, "y": 16, "w": 200, "h": 18, "fontSize": 10, "fontWeight": "700", "color": "#eeeeee", "align": "right", "contentSource": "prefix", "visible": true }]
+      }
+    },
+    {
+      "playerIndex": 5,
+      "x": 1224,
+      "y": 656,
+      "w": 696,
+      "h": 134,
+      "focusX": 0.3,
+      "focusY": 0.4,
+      "nameSize": 22,
+      "placeSize": 24,
+      "radius": 0,
+      "textLayout": {
+        "rank": { "x": -58, "y": 46, "w": 52, "h": 42, "fontSize": 24, "fontWeight": "800", "color": "#ffffff", "contentSource": "rank" },
+        "name": { "x": 418, "y": 50, "w": 264, "h": 34, "fontSize": 22, "fontWeight": "800", "color": "#111111", "contentSource": "tag" },
+        "twitter": { "x": 418, "y": 86, "w": 264, "h": 20, "fontSize": 12, "fontWeight": "500", "color": "#333333", "contentSource": "twitter" },
+        "extras": [{ "x": 480, "y": 16, "w": 200, "h": 18, "fontSize": 10, "fontWeight": "700", "color": "#eeeeee", "align": "right", "contentSource": "prefix", "visible": true }]
+      }
+    },
+    {
+      "playerIndex": 6,
+      "x": 1224,
+      "y": 795,
+      "w": 696,
+      "h": 134,
+      "focusX": 0.3,
+      "focusY": 0.4,
+      "nameSize": 22,
+      "placeSize": 24,
+      "radius": 0,
+      "textLayout": {
+        "rank": { "x": -58, "y": 46, "w": 52, "h": 42, "fontSize": 24, "fontWeight": "800", "color": "#ffffff", "contentSource": "rank" },
+        "name": { "x": 418, "y": 50, "w": 264, "h": 34, "fontSize": 22, "fontWeight": "800", "color": "#111111", "contentSource": "tag" },
+        "twitter": { "x": 418, "y": 86, "w": 264, "h": 20, "fontSize": 12, "fontWeight": "500", "color": "#333333", "contentSource": "twitter" },
+        "extras": [{ "x": 480, "y": 16, "w": 200, "h": 18, "fontSize": 10, "fontWeight": "700", "color": "#eeeeee", "align": "right", "contentSource": "prefix", "visible": true }]
+      }
+    },
+    {
+      "playerIndex": 7,
+      "x": 1224,
+      "y": 934,
+      "w": 696,
+      "h": 134,
+      "focusX": 0.3,
+      "focusY": 0.4,
+      "nameSize": 22,
+      "placeSize": 24,
+      "radius": 0,
+      "textLayout": {
+        "rank": { "x": -58, "y": 46, "w": 52, "h": 42, "fontSize": 24, "fontWeight": "800", "color": "#ffffff", "contentSource": "rank" },
+        "name": { "x": 418, "y": 50, "w": 264, "h": 34, "fontSize": 22, "fontWeight": "800", "color": "#111111", "contentSource": "tag" },
+        "twitter": { "x": 418, "y": 86, "w": 264, "h": 20, "fontSize": 12, "fontWeight": "500", "color": "#333333", "contentSource": "twitter" },
+        "extras": [{ "x": 480, "y": 16, "w": 200, "h": 18, "fontSize": 10, "fontWeight": "700", "color": "#eeeeee", "align": "right", "contentSource": "prefix", "visible": true }]
+      }
+    }
+  ],
+  "createdAt": "2026-08-25T00:00:00.000Z",
+  "updatedAt": "2026-08-25T00:00:00.000Z"
+}

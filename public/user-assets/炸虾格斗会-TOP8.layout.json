@@ -1,0 +1,225 @@
+{
+  "id": "ebifight-club-top8-v1",
+  "name": "炸虾格斗会 TOP8",
+  "description": "经典 TOP8 结构 · 金橙炸虾 + 青蓝格斗主题 · 基于 Ebifight Club LOGO 配色",
+  "width": 1920,
+  "height": 1080,
+  "basedOn": "classic",
+  "headerStyleId": "compact",
+  "headerImageUrl": "/user-assets/ebi-club-top8-header-1840x88.png",
+  "previewBackgroundDataUrl": "/user-assets/ebi-club-top8-bg-1920x1080.jpg",
+  "titleFontId": "noto-sans",
+  "playerFontId": "noto-sans",
+  "rankFontId": "noto-sans",
+  "previewExtraCount": 2,
+  "header": {
+    "x": 40,
+    "y": 18,
+    "w": 1840,
+    "h": 88,
+    "backgroundOpacity": 0.72,
+    "backgroundColor": "#060608",
+    "borderRadius": 12,
+    "accentBarHeight": 3,
+    "borderWidth": 1,
+    "borderColor": "#3db8e8"
+  },
+  "defaultBoxStyle": {
+    "theme": "image",
+    "frameImageUrl": "/user-assets/ebi-club-top8-frame-wide-932x218-overlay.png",
+    "fillOpacity": 0.18,
+    "extraTheme": "image",
+    "extraFrameImageUrl": "/user-assets/ebi-club-top8-frame-extra-128x128-overlay.png",
+    "extraFillOpacity": 0.2
+  },
+  "headerTexts": {
+    "customLogo": { "x": 62, "y": 32, "w": 200, "h": 60, "visible": true },
+    "gameLogo": { "x": 1586, "y": 32, "w": 220, "h": 60, "visible": true },
+    "tournamentName": {
+      "x": 280,
+      "y": 30,
+      "w": 1140,
+      "h": 36,
+      "fontSize": 40,
+      "fontWeight": "800",
+      "color": "#f7f3ea",
+      "align": "left",
+      "visible": true
+    },
+    "metaLine": {
+      "x": 280,
+      "y": 72,
+      "w": 1140,
+      "h": 28,
+      "fontSize": 24,
+      "fontWeight": "600",
+      "color": "#9adcf5",
+      "align": "left",
+      "visible": true
+    }
+  },
+  "slots": [
+    {
+      "playerIndex": 0,
+      "x": 36,
+      "y": 116,
+      "w": 900,
+      "h": 686,
+      "focusX": 0.48,
+      "focusY": 0.34,
+      "nameSize": 42,
+      "placeSize": 92,
+      "radius": 16,
+      "boxStyle": {
+        "theme": "image",
+        "frameImageUrl": "/user-assets/ebi-club-top8-frame-champion-900x686-overlay.png",
+        "fillOpacity": 0.15,
+        "extraTheme": "image",
+        "extraFrameImageUrl": "/user-assets/ebi-club-top8-frame-extra-128x128-overlay.png",
+        "extraFillOpacity": 0.2
+      }
+    },
+    {
+      "playerIndex": 1,
+      "x": 952,
+      "y": 116,
+      "w": 932,
+      "h": 218,
+      "focusX": 0.5,
+      "focusY": 0.32,
+      "nameSize": 28,
+      "placeSize": 48,
+      "radius": 12,
+      "boxStyle": {
+        "theme": "image",
+        "frameImageUrl": "/user-assets/ebi-club-top8-frame-wide-932x218-overlay.png",
+        "fillOpacity": 0.18,
+        "extraTheme": "image",
+        "extraFrameImageUrl": "/user-assets/ebi-club-top8-frame-extra-128x128-overlay.png",
+        "extraFillOpacity": 0.2
+      }
+    },
+    {
+      "playerIndex": 2,
+      "x": 952,
+      "y": 350,
+      "w": 932,
+      "h": 218,
+      "focusX": 0.5,
+      "focusY": 0.32,
+      "nameSize": 28,
+      "placeSize": 48,
+      "radius": 12,
+      "boxStyle": {
+        "theme": "image",
+        "frameImageUrl": "/user-assets/ebi-club-top8-frame-wide-932x218-overlay.png",
+        "fillOpacity": 0.18,
+        "extraTheme": "image",
+        "extraFrameImageUrl": "/user-assets/ebi-club-top8-frame-extra-128x128-overlay.png",
+        "extraFillOpacity": 0.2
+      }
+    },
+    {
+      "playerIndex": 3,
+      "x": 952,
+      "y": 584,
+      "w": 932,
+      "h": 218,
+      "focusX": 0.5,
+      "focusY": 0.32,
+      "nameSize": 28,
+      "placeSize": 48,
+      "radius": 12,
+      "boxStyle": {
+        "theme": "image",
+        "frameImageUrl": "/user-assets/ebi-club-top8-frame-wide-932x218-overlay.png",
+        "fillOpacity": 0.18,
+        "extraTheme": "image",
+        "extraFrameImageUrl": "/user-assets/ebi-club-top8-frame-extra-128x128-overlay.png",
+        "extraFillOpacity": 0.2
+      }
+    },
+    {
+      "playerIndex": 4,
+      "x": 36,
+      "y": 822,
+      "w": 456,
+      "h": 214,
+      "focusX": 0.5,
+      "focusY": 0.34,
+      "nameSize": 24,
+      "placeSize": 40,
+      "radius": 12,
+      "boxStyle": {
+        "theme": "image",
+        "frameImageUrl": "/user-assets/ebi-club-top8-frame-small-456x214-overlay.png",
+        "fillOpacity": 0.2,
+        "extraTheme": "image",
+        "extraFrameImageUrl": "/user-assets/ebi-club-top8-frame-extra-128x128-overlay.png",
+        "extraFillOpacity": 0.2
+      }
+    },
+    {
+      "playerIndex": 5,
+      "x": 508,
+      "y": 822,
+      "w": 456,
+      "h": 214,
+      "focusX": 0.5,
+      "focusY": 0.34,
+      "nameSize": 24,
+      "placeSize": 40,
+      "radius": 12,
+      "boxStyle": {
+        "theme": "image",
+        "frameImageUrl": "/user-assets/ebi-club-top8-frame-small-456x214-overlay.png",
+        "fillOpacity": 0.2,
+        "extraTheme": "image",
+        "extraFrameImageUrl": "/user-assets/ebi-club-top8-frame-extra-128x128-overlay.png",
+        "extraFillOpacity": 0.2
+      }
+    },
+    {
+      "playerIndex": 6,
+      "x": 980,
+      "y": 822,
+      "w": 456,
+      "h": 214,
+      "focusX": 0.5,
+      "focusY": 0.34,
+      "nameSize": 24,
+      "placeSize": 40,
+      "radius": 12,
+      "boxStyle": {
+        "theme": "image",
+        "frameImageUrl": "/user-assets/ebi-club-top8-frame-small-456x214-overlay.png",
+        "fillOpacity": 0.2,
+        "extraTheme": "image",
+        "extraFrameImageUrl": "/user-assets/ebi-club-top8-frame-extra-128x128-overlay.png",
+        "extraFillOpacity": 0.2
+      }
+    },
+    {
+      "playerIndex": 7,
+      "x": 1452,
+      "y": 822,
+      "w": 432,
+      "h": 214,
+      "focusX": 0.5,
+      "focusY": 0.34,
+      "nameSize": 24,
+      "placeSize": 40,
+      "radius": 12,
+      "boxStyle": {
+        "theme": "image",
+        "frameImageUrl": "/user-assets/ebi-club-top8-frame-small-432x214-overlay.png",
+        "fillOpacity": 0.2,
+        "extraTheme": "image",
+        "extraFrameImageUrl": "/user-assets/ebi-club-top8-frame-extra-128x128-overlay.png",
+        "extraFillOpacity": 0.2
+      }
+    }
+  ],
+  "createdAt": "2026-08-24T00:00:00.000Z",
+  "updatedAt": "2026-08-24T00:00:00.000Z"
+}

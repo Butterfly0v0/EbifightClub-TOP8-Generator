@@ -1,0 +1,72 @@
+{
+  "id": "ebifight-club-blank-top8-v1",
+  "name": "炸虾格斗会 · 方格 TOP8",
+  "description": "空白布局 2×4 均分 · 炸虾金橙 + 青蓝格斗主题",
+  "width": 1920,
+  "height": 1080,
+  "headerStyleId": "compact",
+  "headerImageUrl": "/user-assets/ebi-club-blank-header-1840x88.png",
+  "previewBackgroundDataUrl": "/user-assets/ebi-club-blank-bg-1920x1080.jpg",
+  "titleFontId": "noto-sans",
+  "playerFontId": "noto-sans",
+  "rankFontId": "noto-sans",
+  "previewExtraCount": 2,
+  "header": {
+    "x": 40,
+    "y": 18,
+    "w": 1840,
+    "h": 88,
+    "backgroundOpacity": 0.72,
+    "backgroundColor": "#060608",
+    "borderRadius": 12,
+    "accentBarHeight": 3,
+    "borderWidth": 1,
+    "borderColor": "#3db8e8"
+  },
+  "defaultBoxStyle": {
+    "theme": "image",
+    "frameImageUrl": "/user-assets/ebi-club-blank-frame-440x420-overlay.png",
+    "fillOpacity": 0.18,
+    "extraTheme": "image",
+    "extraFrameImageUrl": "/user-assets/ebi-club-blank-frame-extra-128x128-overlay.png",
+    "extraFillOpacity": 0.2
+  },
+  "headerTexts": {
+    "customLogo": { "x": 62, "y": 32, "w": 200, "h": 60, "visible": true },
+    "gameLogo": { "x": 1586, "y": 32, "w": 220, "h": 60, "visible": true },
+    "tournamentName": {
+      "x": 280,
+      "y": 30,
+      "w": 1140,
+      "h": 36,
+      "fontSize": 40,
+      "fontWeight": "800",
+      "color": "#f7f3ea",
+      "align": "left",
+      "visible": true
+    },
+    "metaLine": {
+      "x": 280,
+      "y": 72,
+      "w": 1140,
+      "h": 28,
+      "fontSize": 24,
+      "fontWeight": "600",
+      "color": "#9adcf5",
+      "align": "left",
+      "visible": true
+    }
+  },
+  "slots": [
+    { "playerIndex": 0, "x": 36, "y": 116, "w": 440, "h": 420, "focusX": 0.5, "focusY": 0.32, "nameSize": 28, "placeSize": 48, "radius": 12 },
+    { "playerIndex": 1, "x": 496, "y": 116, "w": 440, "h": 420, "focusX": 0.5, "focusY": 0.32, "nameSize": 28, "placeSize": 48, "radius": 12 },
+    { "playerIndex": 2, "x": 956, "y": 116, "w": 440, "h": 420, "focusX": 0.5, "focusY": 0.32, "nameSize": 28, "placeSize": 48, "radius": 12 },
+    { "playerIndex": 3, "x": 1416, "y": 116, "w": 440, "h": 420, "focusX": 0.5, "focusY": 0.32, "nameSize": 28, "placeSize": 48, "radius": 12 },
+    { "playerIndex": 4, "x": 36, "y": 576, "w": 440, "h": 420, "focusX": 0.5, "focusY": 0.32, "nameSize": 28, "placeSize": 48, "radius": 12 },
+    { "playerIndex": 5, "x": 496, "y": 576, "w": 440, "h": 420, "focusX": 0.5, "focusY": 0.32, "nameSize": 28, "placeSize": 48, "radius": 12 },
+    { "playerIndex": 6, "x": 956, "y": 576, "w": 440, "h": 420, "focusX": 0.5, "focusY": 0.32, "nameSize": 28, "placeSize": 48, "radius": 12 },
+    { "playerIndex": 7, "x": 1416, "y": 576, "w": 440, "h": 420, "focusX": 0.5, "focusY": 0.32, "nameSize": 28, "placeSize": 48, "radius": 12 }
+  ],
+  "createdAt": "2026-08-24T00:00:00.000Z",
+  "updatedAt": "2026-08-24T00:00:00.000Z"
+}
