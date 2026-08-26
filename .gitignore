@@ -29,6 +29,8 @@ saves/
 
 # Smoke / local test outputs
 api-smoke-top8.png
+api-from-url.png
+_api-*
 
 # Personal / runtime uploads under user-assets
 # Keep template images + *.layout.json at public/user-assets/ root

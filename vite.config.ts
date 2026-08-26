@@ -4,6 +4,7 @@ import { defineConfig } from 'vite'
 import type { Connect, PreviewServer, ViteDevServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import { parseParryStandingsHtml } from './src/lib/parryParse.ts'
+import { attachTop8RenderApi } from './server/top8ApiMiddleware.ts'
 
 const SHA_PREFIX = '/api/sha/'
 const CACHE_DIR = path.resolve('.sha-cache')
@@ -286,6 +287,7 @@ function attachDevApis(server: ViteDevServer | PreviewServer) {
   attachParryImport(server)
   attachUserAssetsApi(server)
   attachSavesApi(server)
+  attachTop8RenderApi(server, 5173)
 }
 
 export default defineConfig({
