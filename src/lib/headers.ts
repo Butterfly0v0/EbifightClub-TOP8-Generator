@@ -1,5 +1,5 @@
 import type { HeaderRegion, HeaderStyleId, HeaderLayoutTexts, Top8Doc } from '../types'
-import { fontFamily } from './fonts'
+import { canvasFont } from './fonts'
 import {
   drawLayoutImageBox,
   drawLayoutTextBox,
@@ -78,6 +78,13 @@ export const HEADER_STYLES: Record<HeaderStyleId, HeaderStyle> = {
     description: '白边像素贴纸栏：TOP 8 徽章 + 橙蓝标题分层 + Logo，搭配炸虾像素布局',
     contentTop: 184,
     contentBottom: 1060,
+  },
+  prism: {
+    id: 'prism',
+    name: '棱镜顶栏',
+    description: '半透明渐隐顶栏：棱镜徽章 + TOP 8 + 赛事名，搭配棱镜加冕布局',
+    contentTop: 80,
+    contentBottom: 1052,
   },
 }
 
@@ -167,6 +174,17 @@ export function defaultHeaderRegion(styleId: HeaderStyleId, width = 1920): Heade
         borderWidth: 6,
         borderColor: '#ffffff',
       }
+    case 'prism':
+      return {
+        x: 0,
+        y: 0,
+        w: width,
+        h: 96,
+        backgroundOpacity: 0,
+        backgroundColor: '#08061a',
+        borderRadius: 0,
+        accentBarHeight: 0,
+      }
     default:
       return {
         x: 40,
@@ -205,24 +223,30 @@ function fitText(
   maxWidth: number,
   size: number,
   weight = '700',
-  family = '"Noto Sans SC", "Segoe UI", sans-serif',
+  fontId?: string,
+  fallback = 'noto-sans',
 ) {
   let s = size
-  ctx.font = `${weight} ${s}px ${family}`
+  ctx.font = canvasFont(s, fontId, weight, fallback)
   while (s > 12 && ctx.measureText(text).width > maxWidth) {
     s -= 1
-    ctx.font = `${weight} ${s}px ${family}`
+    ctx.font = canvasFont(s, fontId, weight, fallback)
   }
   return s
 }
 
-function formatEntrants(raw: string | undefined, locale: Top8Doc['posterLocale']): string {
+function formatEntrants(
+  raw: string | undefined,
+  locale: Top8Doc['posterLocale'],
+  teamMode = false,
+): string {
   const t = (raw ?? '').trim()
   if (!t) return ''
   const n = Number(t)
   if (!Number.isFinite(n) || n < 0) return t
   const count = Math.round(n)
-  return locale === 'en' ? `${count} participants` : `${count} 参赛者`
+  if (locale === 'en') return `${count} ${teamMode ? 'teams' : 'participants'}`
+  return `${count} ${teamMode ? '队伍' : '参赛者'}`
 }
 
 type HeaderDrawContext = {
@@ -285,19 +309,19 @@ function drawTitleLines(
 ) {
   const [ar, ag, ab] = accent
   const title = doc.tournamentName || 'EbifightClub TOP 8'
-  const titleFont = fontFamily(doc.titleFontId)
-  const meta = [doc.subtitle, formatEntrants(doc.numEntrants, doc.posterLocale ?? 'zh'), doc.date]
+  const titleFontId = doc.titleFontId
+  const meta = [doc.subtitle, formatEntrants(doc.numEntrants, doc.posterLocale ?? 'zh', doc.teamMode), doc.date]
     .filter(Boolean)
     .join('  ·  ')
 
   ctx.fillStyle = '#f7f3ea'
   ctx.textBaseline = 'top'
-  const fittedTitle = fitText(ctx, title, region.w * 0.62, titleSize, '800', titleFont)
-  ctx.font = `800 ${fittedTitle}px ${titleFont}`
+  const fittedTitle = fitText(ctx, title, region.w * 0.62, titleSize, '800', titleFontId)
+  ctx.font = canvasFont(fittedTitle, titleFontId, '800')
   ctx.fillText(title, titleX, titleY)
 
   ctx.fillStyle = `rgb(${ar},${ag},${ab})`
-  ctx.font = `600 ${metaSize}px ${titleFont}`
+  ctx.font = canvasFont(metaSize, titleFontId, '600')
   ctx.fillText(meta || 'TOP 8', titleX, metaY)
 }
 
@@ -389,8 +413,8 @@ function drawTokonHeader(h: HeaderDrawContext) {
   const [ar, ag, ab] = h.accent
   const { ctx, doc, customLogo, gameLogo } = h
   const locale = doc.posterLocale ?? 'zh'
-  const titleFont = fontFamily(doc.titleFontId)
-  const rankFont = fontFamily(doc.rankFontId, 'bebas')
+  const titleFontId = doc.titleFontId
+  const rankFontId = doc.rankFontId
 
   ctx.fillStyle = 'rgba(6,8,18,0.94)'
   ctx.fillRect(region.x, region.y, region.w, region.h)
@@ -404,7 +428,7 @@ function drawTokonHeader(h: HeaderDrawContext) {
   }
 
   ctx.fillStyle = '#f7f3ea'
-  ctx.font = `italic 800 76px ${rankFont}`
+  ctx.font = canvasFont(76, rankFontId, '800', 'bebas', 'italic')
   ctx.textBaseline = 'middle'
   const top8Label = 'TOP 8'
   const top8W = ctx.measureText(top8Label).width
@@ -418,21 +442,21 @@ function drawTokonHeader(h: HeaderDrawContext) {
   const title = doc.tournamentName || 'EbifightClub TOP 8'
   ctx.textBaseline = 'top'
   ctx.fillStyle = '#f7f3ea'
-  const titleSize = fitText(ctx, title, infoMaxW, 34, '800', titleFont)
-  ctx.font = `800 ${titleSize}px ${titleFont}`
+  const titleSize = fitText(ctx, title, infoMaxW, 34, '800', titleFontId)
+  ctx.font = canvasFont(titleSize, titleFontId, '800')
   ctx.fillText(title, infoX, region.y + 28)
 
   if (doc.subtitle) {
     ctx.fillStyle = '#e8c547'
-    const subSize = fitText(ctx, doc.subtitle, infoMaxW, 26, '600', titleFont)
-    ctx.font = `italic 600 ${subSize}px ${titleFont}`
+    const subSize = fitText(ctx, doc.subtitle, infoMaxW, 26, '600', titleFontId)
+    ctx.font = canvasFont(subSize, titleFontId, '600', 'noto-sans', 'italic')
     ctx.fillText(doc.subtitle, infoX, region.y + 68)
   }
 
-  const meta = [formatEntrants(doc.numEntrants, locale), doc.date].filter(Boolean).join('  ·  ')
+  const meta = [formatEntrants(doc.numEntrants, locale, doc.teamMode), doc.date].filter(Boolean).join('  ·  ')
   if (meta) {
     ctx.fillStyle = 'rgba(247,243,234,0.72)'
-    ctx.font = `500 16px ${titleFont}`
+    ctx.font = canvasFont(16, titleFontId, '500')
     ctx.fillText(meta, infoX, region.y + 104)
   }
 
@@ -453,7 +477,7 @@ function drawTokonHeader(h: HeaderDrawContext) {
     ctx.drawImage(gameLogo, rightX - w, region.y + 58, w, lgH)
   } else {
     ctx.fillStyle = '#f7f3ea'
-    ctx.font = `800 36px ${rankFont}`
+    ctx.font = canvasFont(36, rankFontId, '800', 'bebas')
     ctx.textBaseline = 'middle'
     const fallback = (doc.tournamentName || 'TOP 8').slice(0, 16).toUpperCase()
     ctx.fillText(fallback, rightX, region.y + 92)
@@ -468,8 +492,8 @@ function drawParagonHeader(h: HeaderDrawContext) {
   const [ar, ag, ab] = h.accent
   const { ctx, doc, customLogo, gameLogo } = h
   const locale = doc.posterLocale ?? 'zh'
-  const titleFont = fontFamily(doc.titleFontId)
-  const rankFont = fontFamily(doc.rankFontId, 'bebas')
+  const titleFontId = doc.titleFontId
+  const rankFontId = doc.rankFontId
 
   ctx.fillStyle = '#f4f4f6'
   ctx.fillRect(region.x, region.y, region.w, region.h)
@@ -483,18 +507,18 @@ function drawParagonHeader(h: HeaderDrawContext) {
   const top8Label = 'TOP 8'
   const top8Size = 84
 
-  ctx.font = `800 ${top8Size}px ${rankFont}`
+  ctx.font = canvasFont(top8Size, rankFontId, '800', 'bebas')
   const top8W = ctx.measureText(top8Label).width
   const top8MaxRight = metaX - 24
 
   const series = (doc.tournamentName || 'TOP 8').toUpperCase()
   ctx.fillStyle = '#1a1f2e'
-  ctx.font = `700 13px ${titleFont}`
+  ctx.font = canvasFont(13, titleFontId, '700')
   ctx.textBaseline = 'top'
   ctx.letterSpacing = '1.2px'
   const seriesMaxW = Math.max(120, top8MaxRight - leftX)
-  const seriesSize = fitText(ctx, series, seriesMaxW, 13, '700', titleFont)
-  ctx.font = `700 ${seriesSize}px ${titleFont}`
+  const seriesSize = fitText(ctx, series, seriesMaxW, 13, '700', titleFontId)
+  ctx.font = canvasFont(seriesSize, titleFontId, '700')
   ctx.fillText(series, leftX, region.y + 26)
   ctx.letterSpacing = '0px'
 
@@ -504,8 +528,8 @@ function drawParagonHeader(h: HeaderDrawContext) {
     const tagMaxRight = top8MaxRight - top8W - gapAfterTag
     const tagMaxInner = Math.max(32, tagMaxRight - leftX - tagPadX * 2)
     let tag = doc.subtitle.toUpperCase()
-    let tagSize = fitText(ctx, tag, tagMaxInner, 11, '700', titleFont)
-    ctx.font = `700 ${tagSize}px ${titleFont}`
+    let tagSize = fitText(ctx, tag, tagMaxInner, 11, '700', titleFontId)
+    ctx.font = canvasFont(tagSize, titleFontId, '700')
     while (tag.length > 1 && ctx.measureText(tag).width > tagMaxInner) {
       tag = tag.slice(0, -1)
     }
@@ -526,7 +550,7 @@ function drawParagonHeader(h: HeaderDrawContext) {
   }
 
   ctx.fillStyle = '#12151f'
-  ctx.font = `800 ${top8Size}px ${rankFont}`
+  ctx.font = canvasFont(top8Size, rankFontId, '800', 'bebas')
   ctx.textBaseline = 'middle'
   ctx.fillText(top8Label, top8X, region.y + 76)
 
@@ -539,15 +563,15 @@ function drawParagonHeader(h: HeaderDrawContext) {
 
   if (doc.date) {
     ctx.fillStyle = '#1a1f2e'
-    ctx.font = `700 22px ${titleFont}`
+    ctx.font = canvasFont(22, titleFontId, '700')
     ctx.textBaseline = 'top'
     ctx.fillText(doc.date, metaX, region.y + 60)
   }
 
-  const entrants = formatEntrants(doc.numEntrants, locale)
+  const entrants = formatEntrants(doc.numEntrants, locale, doc.teamMode)
   if (entrants) {
     ctx.fillStyle = '#5c6578'
-    ctx.font = `600 14px ${titleFont}`
+    ctx.font = canvasFont(14, titleFontId, '600')
     const entrantsLabel = locale === 'en' ? entrants.toUpperCase() : entrants
     ctx.fillText(entrantsLabel, metaX, region.y + 92)
   }
@@ -572,8 +596,8 @@ function drawEbifcHeader(h: HeaderDrawContext) {
   const region = { x: 36, y: 20, w: h.width - 72, h: 148 }
   const { ctx, doc, customLogo, gameLogo } = h
   const locale = doc.posterLocale ?? 'zh'
-  const titleFont = fontFamily(doc.titleFontId)
-  const rankFont = fontFamily(doc.rankFontId, 'press-start')
+  const titleFontId = doc.titleFontId
+  const rankFontId = doc.rankFontId
   const orange = '#ff8a3d'
   const blue = '#1a9fff'
 
@@ -598,7 +622,7 @@ function drawEbifcHeader(h: HeaderDrawContext) {
   ctx.fillStyle = '#0a1220'
   ctx.fillRect(badgeX + 4, badgeY + 4, badgeW - 8, badgeH - 8)
   ctx.fillStyle = blue
-  ctx.font = `700 28px ${rankFont}`
+  ctx.font = canvasFont(28, rankFontId, '700', 'press-start')
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'center'
   ctx.fillText('TOP 8', badgeX + badgeW / 2, badgeY + badgeH / 2)
@@ -621,9 +645,9 @@ function drawEbifcHeader(h: HeaderDrawContext) {
   const textX = badgeX + badgeW + 24
   const textMaxW = Math.max(200, rightX - textX - 12)
   const title = doc.tournamentName || 'EbifightClub'
-  const titleSize = fitText(ctx, title, textMaxW, 42, '800', titleFont)
+  const titleSize = fitText(ctx, title, textMaxW, 42, '800', titleFontId)
   ctx.fillStyle = orange
-  ctx.font = `800 ${titleSize}px ${titleFont}`
+  ctx.font = canvasFont(titleSize, titleFontId, '800')
   ctx.textBaseline = 'top'
   ctx.strokeStyle = 'rgba(0,0,0,0.85)'
   ctx.lineWidth = 4
@@ -632,20 +656,20 @@ function drawEbifcHeader(h: HeaderDrawContext) {
   ctx.fillText(title, textX, titleY)
 
   const sub = (doc.subtitle || '').trim()
-  const meta = [doc.date, formatEntrants(doc.numEntrants, locale)].filter(Boolean).join('  ·  ')
+  const meta = [doc.date, formatEntrants(doc.numEntrants, locale, doc.teamMode)].filter(Boolean).join('  ·  ')
   const subY = titleY + titleSize + 10
   if (sub) {
-    const subSize = fitText(ctx, sub, textMaxW, 20, '700', titleFont)
+    const subSize = fitText(ctx, sub, textMaxW, 20, '700', titleFontId)
     ctx.fillStyle = blue
-    ctx.font = `700 ${subSize}px ${titleFont}`
+    ctx.font = canvasFont(subSize, titleFontId, '700')
     ctx.strokeText(sub, textX, subY)
     ctx.fillText(sub, textX, subY)
   }
   if (meta) {
     const metaY = sub ? subY + 28 : subY
     ctx.fillStyle = 'rgba(247,243,234,0.68)'
-    const metaSize = fitText(ctx, meta, textMaxW, 15, '600', titleFont)
-    ctx.font = `600 ${metaSize}px ${titleFont}`
+    const metaSize = fitText(ctx, meta, textMaxW, 15, '600', titleFontId)
+    ctx.font = canvasFont(metaSize, titleFontId, '600')
     ctx.fillText(meta, textX, metaY)
   }
 
@@ -656,8 +680,8 @@ function drawAnimefgcHeader(h: HeaderDrawContext) {
   const region = { x: 0, y: 0, w: h.width, h: 100 }
   const { ctx, doc, customLogo, gameLogo } = h
   const locale = doc.posterLocale ?? 'zh'
-  const titleFont = fontFamily(doc.titleFontId)
-  const rankFont = fontFamily(doc.rankFontId, 'bebas')
+  const titleFontId = doc.titleFontId
+  const rankFontId = doc.rankFontId
   const [ar, ag, ab] = h.accent
 
   const topGrad = ctx.createLinearGradient(0, 0, 0, region.h)
@@ -679,30 +703,115 @@ function drawAnimefgcHeader(h: HeaderDrawContext) {
   }
 
   const title = doc.tournamentName || 'TOP 8'
-  const meta = [doc.subtitle, formatEntrants(doc.numEntrants, locale), doc.date]
+  const meta = [doc.subtitle, formatEntrants(doc.numEntrants, locale, doc.teamMode), doc.date]
     .filter(Boolean)
     .join('  ·  ')
 
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   ctx.fillStyle = '#f7f3ea'
-  const titleSize = fitText(ctx, title, region.w * 0.5, 34, '800', titleFont)
-  ctx.font = `800 ${titleSize}px ${titleFont}`
+  const titleSize = fitText(ctx, title, region.w * 0.5, 34, '800', titleFontId)
+  ctx.font = canvasFont(titleSize, titleFontId, '800')
   ctx.fillText(title, region.w / 2, region.y + 22)
 
   if (meta) {
     ctx.fillStyle = `rgb(${ar},${ag},${ab})`
-    ctx.font = `600 15px ${titleFont}`
+    ctx.font = canvasFont(15, titleFontId, '600')
     ctx.fillText(meta, region.w / 2, region.y + 22 + titleSize + 6)
   }
 
   ctx.fillStyle = `rgb(${ar},${ag},${ab})`
-  ctx.font = `italic 800 28px ${rankFont}`
+  ctx.font = canvasFont(28, rankFontId, '800', 'bebas', 'italic')
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'right'
   ctx.fillText('TOP 8', region.w - 32, region.y + region.h / 2)
 
   ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
+}
+
+function drawPrismDiamond(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  size: number,
+  from: string,
+  to: string,
+) {
+  ctx.save()
+  ctx.beginPath()
+  ctx.moveTo(cx, cy - size)
+  ctx.lineTo(cx + size * 0.7, cy)
+  ctx.lineTo(cx, cy + size)
+  ctx.lineTo(cx - size * 0.7, cy)
+  ctx.closePath()
+  const g = ctx.createLinearGradient(cx - size, cy - size, cx + size, cy + size)
+  g.addColorStop(0, from)
+  g.addColorStop(1, to)
+  ctx.fillStyle = g
+  ctx.fill()
+  ctx.restore()
+}
+
+function drawPrismHeader(h: HeaderDrawContext) {
+  const region = { x: 0, y: 0, w: h.width, h: 96 }
+  const { ctx, doc, customLogo, gameLogo } = h
+  const locale = doc.posterLocale ?? 'zh'
+  const titleFontId = doc.titleFontId
+  const rankFontId = doc.rankFontId
+  const [ar, ag, ab] = h.accent
+  const cyan = '#22d3ee'
+
+  const fade = ctx.createLinearGradient(0, 0, 0, region.h)
+  fade.addColorStop(0, 'rgba(8,6,26,0.88)')
+  fade.addColorStop(0.55, 'rgba(8,6,26,0.42)')
+  fade.addColorStop(1, 'rgba(8,6,26,0)')
+  ctx.fillStyle = fade
+  ctx.fillRect(region.x, region.y, region.w, region.h)
+
+  drawPrismDiamond(ctx, 44, region.y + 42, 16, cyan, `rgb(${ar},${ag},${ab})`)
+  drawPrismDiamond(ctx, 44, region.y + 42, 7, 'rgba(255,255,255,0.92)', cyan)
+
+  ctx.save()
+  ctx.letterSpacing = '4px'
+  ctx.fillStyle = '#f4f1ff'
+  ctx.font = canvasFont(32, rankFontId, '700', 'orbitron')
+  ctx.textBaseline = 'middle'
+  ctx.fillText('TOP 8', 68, region.y + 42)
+  ctx.letterSpacing = '0px'
+  ctx.restore()
+
+  const titleX = 248
+  let rightX = region.w - 20
+  if (customLogo) {
+    const { w, h: lgH } = fitImageSize(customLogo, 160, 92)
+    ctx.drawImage(customLogo, rightX - w, region.y + Math.max(2, (region.h - lgH) / 2 - 2), w, lgH)
+    rightX -= w + 16
+  }
+  if (gameLogo) {
+    const { w, h: lgH } = fitImageSize(gameLogo, 420, 84)
+    ctx.drawImage(gameLogo, rightX - w, region.y + Math.max(2, (region.h - lgH) / 2 - 2), w, lgH)
+    rightX -= w + 18
+  }
+
+  const title = doc.tournamentName || 'TOP 8'
+  const titleMax = Math.max(200, rightX - titleX - 12)
+  const titleSize = fitText(ctx, title, titleMax, 28, '700', titleFontId)
+  ctx.fillStyle = '#f4f1ff'
+  ctx.font = canvasFont(titleSize, titleFontId, '700')
+  ctx.textBaseline = 'top'
+  ctx.fillText(title, titleX, region.y + 16)
+
+  const meta = [doc.subtitle, formatEntrants(doc.numEntrants, locale, doc.teamMode), doc.date]
+    .filter(Boolean)
+    .join('   ·   ')
+  if (meta) {
+    ctx.fillStyle = cyan
+    const metaSize = fitText(ctx, meta, titleMax, 13, '600', titleFontId)
+    ctx.font = canvasFont(metaSize, titleFontId, '600')
+    ctx.fillText(meta, titleX, region.y + 16 + titleSize + 6)
+  }
+
   ctx.textBaseline = 'alphabetic'
 }
 
@@ -811,6 +920,9 @@ export function drawHeader(
       break
     case 'ebifc':
       drawEbifcHeader(h)
+      break
+    case 'prism':
+      drawPrismHeader(h)
       break
     default:
       drawCompactHeader(h)

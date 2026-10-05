@@ -1,5 +1,6 @@
 import type { ArtRect } from '../lib/layoutEditorPreview'
-import { resolveArtScale, resolveEyesight } from '../lib/layoutEditorPreview'
+import { resolveArtScale } from '../lib/layoutEditorPreview'
+import { resolvePickEyes } from '../lib/characterArt'
 import type { CharacterPick, LayoutSlot, PackConfig, Point } from '../types'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 
@@ -58,10 +59,12 @@ export default function LayoutEditorSlotArt({
   focusActive = false,
   onFocusPointerDown,
 }: Props) {
-  const eyes =
-    pick?.codename && pack && !pick.customImageDataUrl
-      ? resolveEyesight(pack, pick.codename, pick.skin ?? 0)
-      : undefined
+  const eyes = img
+    ? resolvePickEyes(pick ?? undefined, pack ?? null, {
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+      })
+    : undefined
 
   return (
     <div

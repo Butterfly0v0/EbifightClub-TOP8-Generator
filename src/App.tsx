@@ -4,7 +4,6 @@ import {
   fetchCatalog,
   fetchGameCharacters,
   fetchPackConfig,
-  matchCharacter,
   matchGame,
   packImagePaths,
   prefetchPaths,
@@ -21,6 +20,7 @@ import {
   PLAYER_ID_STYLES,
 } from './lib/slotStyles'
 import { MAX_PLAYER_CHARACTERS } from './lib/extraCharLayout'
+import { DEFAULT_IMAGE_FOCUS_X, DEFAULT_IMAGE_FOCUS_Y } from './lib/characterArt'
 import { ensureLayoutTexts } from './lib/layoutElements'
 import { effectivePosterSettings, layoutSettingsFromDef, type LayoutFieldOverrides } from './lib/layoutDefaults'
 import { ExtraCharLayoutEditor, PlayerIdLayoutEditor } from './components/SlotStyleConfigEditor'
@@ -28,7 +28,7 @@ import { collectImages, renderTop8 } from './lib/render'
 import { buildTop8TweetText, copyTextToClipboard, downloadTweetText } from './lib/top8Tweet'
 import { rankLabel } from './lib/rank'
 import { saveUserImage } from './lib/userAssets'
-import { ensureFontsLoaded } from './lib/fonts'
+import { ensureFontsLoaded, waitForFonts } from './lib/fonts'
 import FontPicker from './components/FontPicker'
 import BoxStyleEditor from './components/BoxStyleEditor'
 import EditorSection from './components/EditorSection'
@@ -39,9 +39,12 @@ import {
   setChallongeApiKey,
   setStartggToken,
 } from './lib/importTokens'
+import { playerSlotsFromImport } from './lib/buildDocFromImport'
 import { detectImportSource, importTournament } from './lib/tournamentImport'
+import { MAX_TEAM_MEMBERS, seedTeamMembers } from './lib/teamMode'
 import type { ImportSource } from './lib/importTypes'
 import LayoutEditor from './components/LayoutEditor'
+import CustomImageFocus from './components/CustomImageFocus'
 import GameAssetPickerModal from './components/GameAssetPickerModal'
 import type { GameSwitchMode } from './components/GameAssetPickerModal'
 import { applyTheme, resolveInitialTheme, setStoredTheme, type UiTheme } from './lib/theme'
@@ -58,6 +61,7 @@ import type {
   PackConfig,
   PlayerSlot,
   PosterLocale,
+  TeamMember,
   Top8Doc,
 } from './types'
 
@@ -243,9 +247,11 @@ export default function App() {
       if (!cancelled) renderTop8(ctx, doc, layout, pack, images, characters)
     }
     draw()
-    void document.fonts.ready.then(draw)
+    void waitForFonts([doc.titleFontId, doc.playerFontId, doc.rankFontId]).then(draw)
+    document.fonts.addEventListener('loadingdone', draw)
     return () => {
       cancelled = true
+      document.fonts.removeEventListener('loadingdone', draw)
     }
   }, [doc, layout, pack, images, characters])
 
@@ -310,16 +316,7 @@ export default function App() {
         chars = await fetchGameCharacters(matchedGame.code)
         setCharacters(chars)
       }
-      const players: PlayerSlot[] = result.players.map((p) => ({
-        placement: p.placement,
-        tag: p.tag,
-        prefix: p.prefix,
-        twitter: '',
-        characters: p.characterNames
-          .map((name) => matchCharacter(chars, name))
-          .filter((c): c is CharacterDef => Boolean(c))
-          .map((c) => ({ codename: c.codename, skin: 0 })),
-      }))
+      const players = playerSlotsFromImport(result.players, chars)
       setDoc((d) => ({
         ...d,
         tournamentName: result.tournamentName || d.tournamentName,
@@ -331,14 +328,18 @@ export default function App() {
             : d.numEntrants,
         gameCode: nextGame?.code ?? d.gameCode,
         packId: nextGame && nextGame.code !== d.gameCode ? 'full' : d.packId,
+        teamMode: result.isTeam,
         players,
       }))
       const filled = players.filter((p) => p.tag).length
       const from = sourceLabel(result.source) ?? '赛事'
-      const charHint =
-        result.source === 'startgg' ? '角色来自近期对局，可手动修正。' : '请手动核对/填写角色。'
+      const charHint = result.isTeam
+        ? '已按组队赛生成：每个名次并排显示队员立绘，角色来自近期对局，可手动修正。'
+        : result.source === 'startgg'
+          ? '角色来自近期对局，可手动修正。'
+          : '请手动核对/填写角色。'
       setStatus(
-        `已从 ${from} 导入 ${filled} 名选手${result.numEntrants ? `（赛事 ${result.numEntrants} 人）` : ''}。${charHint}`,
+        `已从 ${from} 导入 ${filled} ${result.isTeam ? '支队伍' : '名选手'}${result.numEntrants ? `（赛事 ${result.numEntrants} 人）` : ''}。${charHint}`,
       )
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err))
@@ -380,15 +381,17 @@ export default function App() {
   }
 
   const exportPng = async () => {
-    await document.fonts.ready
+    await waitForFonts([doc.titleFontId, doc.playerFontId, doc.rankFontId])
     const canvas = canvasRef.current
     if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (ctx) renderTop8(ctx, doc, layout, pack, images, characters)
     downloadCanvas(canvas, doc.posterLocale === 'en' ? '-EN' : '')
   }
 
   /** 不改预览语言，离屏渲染英文版并下载 */
   const exportEnglishPng = async () => {
-    await document.fonts.ready
+    await waitForFonts([doc.titleFontId, doc.playerFontId, doc.rankFontId])
     const off = document.createElement('canvas')
     off.width = layout.width
     off.height = layout.height
@@ -511,8 +514,8 @@ export default function App() {
                   value={doc.posterLocale}
                   onChange={(e) => patch({ posterLocale: e.target.value as PosterLocale })}
                 >
-                  <option value="zh">中文 · N 参赛者</option>
-                  <option value="en">English · N participants</option>
+                  <option value="zh">{doc.teamMode ? '中文 · N 队伍' : '中文 · N 参赛者'}</option>
+                  <option value="en">{doc.teamMode ? 'English · N teams' : 'English · N participants'}</option>
                 </select>
               </label>
               <p className="hint">也可直接点右上角「导出英文 PNG」，无需切换预览语言。</p>
@@ -798,6 +801,30 @@ export default function App() {
             </EditorSection>
 
             <EditorSection title="选手">
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={doc.teamMode}
+                  onChange={(e) => {
+                    const teamMode = e.target.checked
+                    setDoc((d) => ({
+                      ...d,
+                      teamMode,
+                      players: teamMode
+                        ? d.players.map((p) =>
+                            p.members && p.members.length > 0
+                              ? p
+                              : { ...p, members: seedTeamMembers(p) },
+                          )
+                        : d.players,
+                    }))
+                  }}
+                />
+                组队赛模式
+              </label>
+              <p className="hint">
+                打开后，当前所有模板都会在每个名次框里并排画队员立绘，队名显示在名条上。导入组队赛时会自动打开。
+              </p>
               <div className="players">
                 {doc.players.map((player, index) => (
                   <PlayerEditor
@@ -806,6 +833,7 @@ export default function App() {
                     characters={characters}
                     pack={pack}
                     gameCode={doc.gameCode}
+                    teamMode={doc.teamMode}
                     onChange={(partial) => patchPlayer(index, partial)}
                   />
                 ))}
@@ -922,17 +950,26 @@ export default function App() {
   )
 }
 
+/** 名次可选 1–8，并保留导入后落在这个范围外的当前值。 */
+function placementChoices(current: number): number[] {
+  const base = [1, 2, 3, 4, 5, 6, 7, 8]
+  if (!Number.isFinite(current) || base.includes(current)) return base
+  return [...base, current].sort((a, b) => a - b)
+}
+
 function PlayerEditor({
   player,
   characters,
   pack,
   gameCode,
+  teamMode,
   onChange,
 }: {
   player: PlayerSlot
   characters: CharacterDef[]
   pack: PackConfig | null
   gameCode: string
+  teamMode: boolean
   onChange: (partial: Partial<PlayerSlot>) => void
 }) {
   const setChar = (index: number, pick: CharacterPick | null) => {
@@ -955,6 +992,8 @@ function PlayerEditor({
           skin: current?.skin ?? 0,
           customImageDataUrl: url,
           artScale: current?.artScale,
+          imageFocusX: DEFAULT_IMAGE_FOCUS_X,
+          imageFocusY: DEFAULT_IMAGE_FOCUS_Y,
         })
       })
       .catch(() => {
@@ -966,7 +1005,18 @@ function PlayerEditor({
   return (
     <article className="player">
       <header>
-        <strong>{rankLabel(player.placement)}</strong>
+        <select
+          className="player-place"
+          aria-label="名次"
+          value={player.placement}
+          onChange={(e) => onChange({ placement: Number(e.target.value) })}
+        >
+          {placementChoices(player.placement).map((n) => (
+            <option key={n} value={n}>
+              {rankLabel(n)}
+            </option>
+          ))}
+        </select>
         <div className="player-names">
           <input
             placeholder="战队 / 前缀"
@@ -974,7 +1024,7 @@ function PlayerEditor({
             onChange={(e) => onChange({ prefix: e.target.value })}
           />
           <input
-            placeholder="选手名"
+            placeholder={teamMode ? '队名' : '选手名'}
             value={player.tag}
             onChange={(e) => onChange({ tag: e.target.value })}
           />
@@ -988,6 +1038,25 @@ function PlayerEditor({
           onChange={(e) => onChange({ twitter: e.target.value })}
         />
       </label>
+      {teamMode ? (
+        <TeamMembersEditor
+          members={player.members ?? []}
+          characters={characters}
+          pack={pack}
+          gameCode={gameCode}
+          onChange={(members) =>
+            onChange({
+              members,
+              characters: members
+                .flatMap((member) =>
+                  member.characters.filter((c) => c.codename || c.customImageDataUrl),
+                )
+                .slice(0, MAX_PLAYER_CHARACTERS),
+            })
+          }
+        />
+      ) : null}
+      {!teamMode ? (
       <div className="chars">
         {Array.from({ length: Math.max(1, player.characters.length) }, (_, i) => i).map((i) => {
           const current = player.characters[i]
@@ -1007,10 +1076,9 @@ function PlayerEditor({
                       return
                     }
                     setChar(i, {
+                      ...(current ?? { codename: '', skin: 0 }),
                       codename,
                       skin: 0,
-                      customImageDataUrl: current?.customImageDataUrl,
-                      artScale: current?.artScale,
                     })
                   }}
                 >
@@ -1023,7 +1091,7 @@ function PlayerEditor({
                     </option>
                   ))}
                 </select>
-                {current?.codename && skins > 1 && !hasCustom ? (
+                {current?.codename && skins > 1 ? (
                   <select
                     value={String(current.skin)}
                     onChange={(e) =>
@@ -1059,14 +1127,33 @@ function PlayerEditor({
                     value={Math.round(artScale * 100)}
                     onChange={(e) =>
                       setChar(i, {
-                        codename: current?.codename ?? '',
-                        skin: current?.skin ?? 0,
-                        customImageDataUrl: current?.customImageDataUrl,
+                        ...(current ?? { codename: '', skin: 0 }),
                         artScale: Number(e.target.value) / 100,
                       })
                     }
                   />
                 </label>
+              ) : null}
+              {hasCustom && current?.customImageDataUrl ? (
+                <CustomImageFocus
+                  src={current.customImageDataUrl}
+                  focusX={current.imageFocusX}
+                  focusY={current.imageFocusY}
+                  onChange={(imageFocusX, imageFocusY) =>
+                    setChar(i, {
+                      ...(current ?? { codename: '', skin: 0 }),
+                      imageFocusX,
+                      imageFocusY,
+                    })
+                  }
+                />
+              ) : null}
+              {hasCustom && i === 0 ? (
+                <p className="custom-focus-hint">
+                  {current?.codename
+                    ? '自定义图作为主立绘；所选角色会作为第一个副角色显示'
+                    : '自定义图作为主立绘；选择角色后，该角色会作为第一个副角色显示'}
+                </p>
               ) : null}
               <div className="char-upload">
                 <label className="file-btn">
@@ -1085,7 +1172,12 @@ function PlayerEditor({
                       className="ghost tiny"
                       onClick={() => {
                         if (!current?.codename) setChar(i, null)
-                        else setChar(i, { ...current, customImageDataUrl: '' })
+                        else
+                          setChar(i, {
+                            codename: current.codename,
+                            skin: current.skin,
+                            artScale: current.artScale,
+                          })
                       }}
                     >
                       清除自定义图
@@ -1110,6 +1202,164 @@ function PlayerEditor({
           </button>
         ) : null}
       </div>
+      ) : null}
     </article>
+  )
+}
+
+function TeamMembersEditor({
+  members,
+  characters,
+  pack,
+  gameCode,
+  onChange,
+}: {
+  members: TeamMember[]
+  characters: CharacterDef[]
+  pack: PackConfig | null
+  gameCode: string
+  onChange: (members: TeamMember[]) => void
+}) {
+  const update = (index: number, partial: Partial<TeamMember>) => {
+    onChange(members.map((member, i) => (i === index ? { ...member, ...partial } : member)))
+  }
+
+  const setPick = (index: number, pick: CharacterPick | null) => {
+    const current = members[index]
+    if (!current) return
+    update(index, { characters: pick && (pick.codename || pick.customImageDataUrl) ? [pick] : [] })
+  }
+
+  return (
+    <div className="team-members">
+      {members.map((member, index) => {
+        const pick = member.characters[0]
+        const skins = pick?.codename && pack ? skinCount(pack, pick.codename) : 1
+        return (
+          <div key={index} className="team-member">
+            <div className="team-member-head">
+              <input
+                placeholder={`队员 ${index + 1}`}
+                value={member.tag}
+                onChange={(e) => update(index, { tag: e.target.value })}
+              />
+              <input
+                placeholder="前缀"
+                value={member.prefix}
+                onChange={(e) => update(index, { prefix: e.target.value })}
+              />
+              {members.length > 2 ? (
+                <button
+                  type="button"
+                  className="ghost tiny danger"
+                  onClick={() => onChange(members.filter((_, i) => i !== index))}
+                >
+                  移除
+                </button>
+              ) : null}
+            </div>
+            <div className="char-row">
+              <select
+                value={pick?.codename ?? ''}
+                onChange={(e) => {
+                  const codename = e.target.value
+                  if (!codename && !pick?.customImageDataUrl) {
+                    setPick(index, null)
+                    return
+                  }
+                  setPick(index, { ...(pick ?? { codename: '', skin: 0 }), codename, skin: 0 })
+                }}
+              >
+                <option value="">队员角色</option>
+                {characters.map((c) => (
+                  <option key={c.codename} value={c.codename}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              {pick?.codename && skins > 1 ? (
+                <select
+                  value={String(pick.skin)}
+                  onChange={(e) => setPick(index, { ...pick, skin: Number(e.target.value) })}
+                >
+                  {Array.from({ length: skins }, (_, s) => (
+                    <option key={s} value={s}>
+                      皮肤 {s + 1}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+            </div>
+            <div className="char-upload">
+              <label className="file-btn">
+                {pick?.customImageDataUrl ? '更换自定义图' : '上传自定义图'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    e.target.value = ''
+                    if (!file) return
+                    void saveUserImage(file, {
+                      maxEdge: 1400,
+                      quality: 0.86,
+                      prefix: 'char',
+                      gameCode,
+                    }).then((url) => {
+                      setPick(index, {
+                        codename: pick?.codename ?? '',
+                        skin: pick?.skin ?? 0,
+                        customImageDataUrl: url,
+                        artScale: pick?.artScale,
+                        imageFocusX: DEFAULT_IMAGE_FOCUS_X,
+                        imageFocusY: DEFAULT_IMAGE_FOCUS_Y,
+                      })
+                    })
+                  }}
+                />
+              </label>
+              {pick?.customImageDataUrl ? (
+                <button
+                  type="button"
+                  className="ghost tiny"
+                  onClick={() => {
+                    if (!pick.codename) setPick(index, null)
+                    else
+                      setPick(index, {
+                        codename: pick.codename,
+                        skin: pick.skin,
+                        artScale: pick.artScale,
+                      })
+                  }}
+                >
+                  清除自定义图
+                </button>
+              ) : null}
+            </div>
+            {pick?.customImageDataUrl ? (
+              <CustomImageFocus
+                src={pick.customImageDataUrl}
+                focusX={pick.imageFocusX}
+                focusY={pick.imageFocusY}
+                onChange={(imageFocusX, imageFocusY) =>
+                  setPick(index, { ...pick, imageFocusX, imageFocusY })
+                }
+              />
+            ) : null}
+          </div>
+        )
+      })}
+      {members.length < MAX_TEAM_MEMBERS ? (
+        <button
+          type="button"
+          className="ghost add-char-btn"
+          onClick={() =>
+            onChange([...members, { tag: '', prefix: '', twitter: '', characters: [] }])
+          }
+        >
+          + 添加队员（最多 {MAX_TEAM_MEMBERS} 人）
+        </button>
+      ) : null}
+    </div>
   )
 }

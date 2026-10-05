@@ -220,6 +220,50 @@ export const LAYOUTS: Record<BuiltInLayoutId, Layout> = {
     recommendedShowExtraCharNames: true,
     slots: ebifcLayout(),
   },
+  prism: {
+    id: 'prism',
+    name: '棱镜 TOP8',
+    description: '冠军居中聚光，2–5 名环抱两侧，6–8 名底部横条；紫青棱镜切面名牌',
+    width: W,
+    height: H,
+    header: { x: 0, y: 0, w: W, h: 96 },
+    theme: 'prism',
+    recommendedHeaderStyleId: 'prism',
+    recommendedExtraCharStyleId: 'bottomRow',
+    recommendedPlayerIdStyleId: 'overlay',
+    recommendedTitleFontId: 'outfit',
+    recommendedPlayerFontId: 'noto-sans',
+    recommendedRankFontId: 'orbitron',
+    recommendedAccent: '#a78bfa',
+    recommendedBackground: '#08061a',
+    recommendedBackgroundDim: 0.48,
+    recommendedDefaultBoxStyle: {
+      theme: 'accent',
+      fillColor: '#0c0a1c',
+      fillOpacity: 0.9,
+      borderWidth: 2,
+      borderOpacity: 0.85,
+    },
+    recommendedPlayerBoxOpacity: 0.92,
+    recommendedGlobalArtScale: 1.1,
+    recommendedShowCredits: true,
+    recommendedShowExtraCharNames: true,
+    slots: prismLayout(),
+  },
+}
+
+/** 棱镜：冠军居中加冕，2/3 上侧翼、4/5 下侧翼，6–8 底部横条 */
+function prismLayout(): Layout['slots'] {
+  return [
+    slot(0, 564, 80, 792, 748, 0.5, 0.3, 36, 84, 16),
+    slot(1, 16, 80, 538, 364, 0.42, 0.32, 24, 48, 12),
+    slot(2, 1366, 80, 538, 364, 0.58, 0.32, 24, 48, 12),
+    slot(3, 16, 454, 538, 364, 0.42, 0.34, 22, 42, 12),
+    slot(4, 1366, 454, 538, 364, 0.58, 0.34, 22, 42, 12),
+    slot(5, 16, 840, 623, 212, 0.5, 0.34, 18, 32, 10),
+    slot(6, 649, 840, 623, 212, 0.5, 0.34, 18, 32, 10),
+    slot(7, 1282, 840, 622, 212, 0.5, 0.34, 18, 32, 10),
+  ]
 }
 
 /** 炸虾像素：方格 TOP8 结构（左冠军大正方 + 右上 3 / 右下 4） */

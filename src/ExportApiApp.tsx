@@ -4,7 +4,7 @@ import {
   fetchGameCharacters,
   fetchPackConfig,
 } from './lib/assets'
-import { ensureFontsLoaded } from './lib/fonts'
+import { waitForFonts } from './lib/fonts'
 import { resolveLayout } from './lib/layoutMetrics'
 import { resolveDocLayout } from './lib/layouts'
 import { collectImages, renderTop8 } from './lib/render'
@@ -66,9 +66,17 @@ export default function ExportApiApp() {
       const layout = resolveLayout(baseLayout, doc.headerStyleId)
 
       setMessage('加载字体与图片…')
-      ensureFontsLoaded(doc.titleFontId, doc.playerFontId, doc.rankFontId)
-      await document.fonts.ready
-      const images = await collectImages({ ...doc, packId }, game, pack, baseLayout)
+      const fontSample = [
+        doc.tournamentName,
+        doc.subtitle,
+        ...doc.players.map((p) => [p.tag, p.prefix].filter(Boolean).join(' ')),
+      ]
+        .filter(Boolean)
+        .join(' ')
+      const [, images] = await Promise.all([
+        waitForFonts([doc.titleFontId, doc.playerFontId, doc.rankFontId], fontSample),
+        collectImages({ ...doc, packId }, game, pack, baseLayout),
+      ])
       if (cancelled) return
 
       setMessage('绘制海报…')

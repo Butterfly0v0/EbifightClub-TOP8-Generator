@@ -1,4 +1,5 @@
-import type { PlayerSlot, Top8Doc, CustomLayoutDef } from '../types'
+import type { CharacterPick, PlayerSlot, TeamMember, Top8Doc, CustomLayoutDef } from '../types'
+import { MAX_TEAM_MEMBERS } from './teamMode'
 import { DEFAULT_BOX_STYLE, normalizeBoxStyle } from './boxThemes'
 import { normalizeThemeConfig } from './themeConfig'
 import { DEFAULT_PLAYER_FONT, DEFAULT_RANK_FONT, DEFAULT_TITLE_FONT, isValidFontId } from './fonts'
@@ -49,27 +50,57 @@ export function defaultDoc(gameCode = 'sf6'): Top8Doc {
     showExtraCharNames: true,
     globalArtScale: 1,
     logoDataUrl: '',
+    teamMode: false,
     players: emptyPlayers(),
+  }
+}
+
+function normalizePick(c: Partial<CharacterPick> | undefined): CharacterPick {
+  return {
+    codename: c?.codename ?? '',
+    skin: c?.skin ?? 0,
+    customImageDataUrl: c?.customImageDataUrl ?? '',
+    artScale:
+      typeof c?.artScale === 'number' && Number.isFinite(c.artScale)
+        ? Math.min(2.5, Math.max(0.5, c.artScale))
+        : 1,
+    imageFocusX:
+      typeof c?.imageFocusX === 'number' && Number.isFinite(c.imageFocusX)
+        ? Math.min(1, Math.max(0, c.imageFocusX))
+        : undefined,
+    imageFocusY:
+      typeof c?.imageFocusY === 'number' && Number.isFinite(c.imageFocusY)
+        ? Math.min(1, Math.max(0, c.imageFocusY))
+        : undefined,
+  }
+}
+
+function normalizeMember(raw: Partial<TeamMember> | undefined): TeamMember | null {
+  if (!raw || typeof raw !== 'object') return null
+  return {
+    tag: raw.tag ?? '',
+    prefix: raw.prefix ?? '',
+    twitter: raw.twitter ?? '',
+    characters: (raw.characters ?? []).slice(0, 1).map((c) => normalizePick(c)),
   }
 }
 
 function normalizePlayers(players: Top8Doc['players'] | undefined): Top8Doc['players'] {
   if (!players || players.length !== 8) return emptyPlayers()
-  return players.map((p, i) => ({
-    placement: p.placement ?? i + 1,
-    tag: p.tag ?? '',
-    prefix: p.prefix ?? '',
-    twitter: p.twitter ?? '',
-    characters: (p.characters ?? []).map((c) => ({
-      codename: c.codename ?? '',
-      skin: c.skin ?? 0,
-      customImageDataUrl: c.customImageDataUrl ?? '',
-      artScale:
-        typeof c.artScale === 'number' && Number.isFinite(c.artScale)
-          ? Math.min(2.5, Math.max(0.5, c.artScale))
-          : 1,
-    })),
-  }))
+  return players.map((p, i) => {
+    const members = (p.members ?? [])
+      .slice(0, MAX_TEAM_MEMBERS)
+      .map((m) => normalizeMember(m))
+      .filter((m): m is TeamMember => Boolean(m))
+    return {
+      placement: p.placement ?? i + 1,
+      tag: p.tag ?? '',
+      prefix: p.prefix ?? '',
+      twitter: p.twitter ?? '',
+      characters: (p.characters ?? []).map((c) => normalizePick(c)),
+      members: members.length > 0 ? members : undefined,
+    }
+  })
 }
 
 function normalizeCustomLayout(raw: Partial<CustomLayoutDef> | null | undefined): CustomLayoutDef | null {
@@ -144,7 +175,8 @@ export function normalizeLoadedDoc(parsed: Partial<Top8Doc>, gameCode: string): 
           layoutIdRaw === 'tokon' ||
           layoutIdRaw === 'paragon' ||
           layoutIdRaw === 'animefgc' ||
-          layoutIdRaw === 'ebifc'
+          layoutIdRaw === 'ebifc' ||
+          layoutIdRaw === 'prism'
         ? layoutIdRaw
         : 'classic'
   return {
@@ -163,7 +195,8 @@ export function normalizeLoadedDoc(parsed: Partial<Top8Doc>, gameCode: string): 
       parsed.headerStyleId === 'tokon' ||
         parsed.headerStyleId === 'paragon' ||
         parsed.headerStyleId === 'animefgc' ||
-        parsed.headerStyleId === 'ebifc'
+        parsed.headerStyleId === 'ebifc' ||
+        parsed.headerStyleId === 'prism'
         ? parsed.headerStyleId
         : 'compact',
     extraCharStyleId:
@@ -199,6 +232,7 @@ export function normalizeLoadedDoc(parsed: Partial<Top8Doc>, gameCode: string): 
         ? Math.min(2.5, Math.max(0.5, parsed.globalArtScale))
         : 1,
     layoutOverrides: normalizeLayoutOverrides(parsed.layoutOverrides),
+    teamMode: parsed.teamMode === true,
     players: normalizePlayers(parsed.players),
     logoDataUrl: stripAutoBrandLogo(parsed.logoDataUrl),
   }

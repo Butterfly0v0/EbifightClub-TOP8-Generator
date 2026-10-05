@@ -22,14 +22,16 @@ Windows 也可双击 `启动.bat`：首次会自动 `npm install`，然后启动
 ## 主要功能
 
 - **游戏 / 素材包**：从 StreamHelperAssets 读取游戏列表；`full` 一般为全身立绘，适合 TOP8。
-- **布局**：内置 `classic` / `podium` / `squares` / `tokon` / `paragon` / `animefgc` / `ebifc`；另有社区布局文件（`public/user-assets/*.layout.json`）。可在 **布局编辑器** 中拖拽槽位、框体、标题等，导出 / 导入布局 JSON。
+- **布局**：内置 `classic` / `podium` / `squares` / `tokon` / `paragon` / `animefgc` / `ebifc` / `prism`；另有社区布局文件（`public/user-assets/*.layout.json`）。可在 **布局编辑器** 中拖拽槽位、框体、标题等，导出 / 导入布局 JSON。
 - **背景与品牌**：上传背景图并调节暗化；可放 Logo；未上传时用纯色背景。
-- **自定义立绘**：每位选手主选 / 副选可上传本地图（优先于素材包）；最多 3 个角色，副选以小图标显示。
+- **自定义立绘**：每位选手主选 / 副选可上传本地图（优先于素材包）；主选之外最多 12 个副选，以小图标显示。
 - **字体与主题**：标题 / 选手名 / 名次字体可选；框体样式、强调色等可调。
 - **赛事导入**
   - **start.gg**：粘贴 event 链接；角色按近期选用次数猜测，请核对。限流时可到 [start.gg Developer](https://www.start.gg/admin/profile/developer) 创建 token 填入页面。
   - **Challonge**：粘贴赛事链接（含社区子域），需 [API Key](https://challonge.com/settings/developer)；赛事需已完赛。
   - **parry.gg**：粘贴 standings 页链接，无需 Key。
+  - **组队赛**：start.gg / parry.gg 识别到多人一队时自动打开。每个名次框并排画队员立绘（最多 5 人），名条显示队名；方格 TOP8 的队名水平居中。标题人数写成「N 队伍」（英文为 `N teams`）。也可在「选手」里手动开关。Challonge 没有队员名单，导入后仍是单人赛，需手动打开再填写。
+  - **名次**：每个选手卡片可以改海报上的名次（1ST–8TH）。并列可以选相同名次，格子顺序不变。
 - **素材源**：默认 jsDelivr；国内失败可改 GitHub Raw。
 - **按游戏存档**：开发环境下海报数据可保存到本地 `saves/<gameCode>/`（该目录不进入仓库）。
 
@@ -65,7 +67,7 @@ curl -X POST http://localhost:5173/api/v1/top8/render-from-url \
 | POST | `/api/v1/top8/import` | 只导入名次 JSON，不渲染 |
 | POST | `/api/v1/top8/render` | 手动选手数据 → PNG |
 
-`layoutId` 可选：`classic`、`podium`、`squares`、`tokon`、`paragon`、`animefgc`、`ebifc`、`custom`。
+`layoutId` 可选：`classic`、`podium`、`squares`、`tokon`、`paragon`、`animefgc`、`ebifc`、`prism`、`custom`。
 
 支持 start.gg、Challonge、parry.gg。完整字段、鉴权与故障排查见 **[docs/API.md](docs/API.md)**。
 

@@ -39,14 +39,28 @@ export type CharacterPick = {
   customImageDataUrl?: string
   /** 立绘缩放，1 为默认；越大越充满选手框 */
   artScale?: number
+  /** 自定义图焦点（图上归一化坐标，0–1）；仅 customImageDataUrl 有值时生效 */
+  imageFocusX?: number
+  imageFocusY?: number
 }
 
-export type PlayerSlot = {
-  placement: number
+/** 组队赛中的一名队员。立绘用 characters[0]。 */
+export type TeamMember = {
   tag: string
   prefix: string
   twitter: string
   characters: CharacterPick[]
+}
+
+export type PlayerSlot = {
+  placement: number
+  /** 单人赛为选手名；组队赛为队名 */
+  tag: string
+  prefix: string
+  twitter: string
+  characters: CharacterPick[]
+  /** 组队赛队员。teamMode 打开且有队员时，名次框内并排画每人立绘 */
+  members?: TeamMember[]
 }
 
 export type BuiltInLayoutId =
@@ -57,6 +71,7 @@ export type BuiltInLayoutId =
   | 'paragon'
   | 'animefgc'
   | 'ebifc'
+  | 'prism'
 
 export type LayoutId = BuiltInLayoutId | 'custom'
 
@@ -71,6 +86,7 @@ export type HeaderStyleId =
   | 'paragon'
   | 'animefgc'
   | 'ebifc'
+  | 'prism'
 
 /** 副选角色展示方式 */
 export type ExtraCharStyleId = 'bottomRow' | 'sideStack' | 'custom'
@@ -306,6 +322,11 @@ export type Top8Doc = {
   globalArtScale: number
   logoDataUrl: string
   players: PlayerSlot[]
+  /**
+   * 组队赛模式。打开后每个名次框并排展示队员立绘，队名用选手 tag。
+   * 导入 start.gg / parry.gg 组队赛时自动打开。
+   */
+  teamMode: boolean
   /** 主界面手动改过、不再跟随 customLayout 默认值的字段 */
   layoutOverrides?: {
     background?: boolean
@@ -331,7 +352,7 @@ export type LayoutSlot = {
   textLayout?: SlotTextLayout
 }
 
-export type LayoutTheme = 'default' | 'tokon' | 'paragon' | 'animefgc' | 'ebifc'
+export type LayoutTheme = 'default' | 'tokon' | 'paragon' | 'animefgc' | 'ebifc' | 'prism'
 
 /** 标题栏 / 选手框文字：内置主题绘制 或 自定义文字框 */
 export type LayoutTextRenderMode = 'theme' | 'custom'

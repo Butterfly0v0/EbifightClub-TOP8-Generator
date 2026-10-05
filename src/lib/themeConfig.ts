@@ -45,6 +45,14 @@ export function defaultThemeConfigForTheme(theme?: LayoutTheme): LayoutThemeConf
         slotArtBoost: 1.06,
         twitterStripH: 22,
       }
+    case 'prism':
+      return {
+        overlayVeilStartRatio: 0.48,
+        overlayVeilOpacity: 0.88,
+        slotArtBoost: 1.08,
+        artCoverMultiplier: 1.18,
+        twitterStripH: 18,
+      }
     default:
       return {}
   }

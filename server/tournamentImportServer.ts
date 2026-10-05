@@ -1,122 +1,24 @@
 import { parseParryStandingsHtml } from '../src/lib/parryParse.ts'
-import { assignTop8Slots, type TournamentImport } from '../src/lib/importTypes.ts'
+import { assignTop8Slots, importIsTeam, type TournamentImport } from '../src/lib/importTypes.ts'
 import { detectImportSource } from '../src/lib/tournamentImport.ts'
 import { parseEventSlug } from '../src/lib/startgg.ts'
 import { parseChallongeSlug } from '../src/lib/challonge.ts'
-import { parseParrySlugPath } from '../src/lib/parrygg.ts'
+import { parryEntrantFields, parseParrySlugPath } from '../src/lib/parrygg.ts'
+import {
+  applyStartggCharacters,
+  assignStartggStandings,
+  STARTGG_SETS_FALLBACK_QUERY,
+  STARTGG_SETS_QUERY,
+  STARTGG_STANDINGS_FALLBACK_QUERY,
+  STARTGG_STANDINGS_QUERY,
+  startggEventIsTeam,
+  type StartggSetsEvent,
+  type StartggStandingsEvent,
+} from '../src/lib/startggStandings.ts'
 
 export type ServerImportOptions = {
   startggToken?: string
   challongeApiKey?: string
-}
-
-const STANDINGS_QUERY = `
-query Top8Standings($slug: String!) {
-  event(slug: $slug) {
-    name
-    numEntrants
-    startAt
-    videogame { id name }
-    tournament { name city }
-    standings(query: { page: 1, perPage: 24, sortBy: "placement" }) {
-      nodes {
-        placement
-        entrant {
-          id
-          name
-          participants { gamerTag prefix }
-        }
-      }
-    }
-  }
-}
-`
-
-const STANDINGS_FALLBACK_QUERY = `
-query Top8StandingsFallback($slug: String!) {
-  event(slug: $slug) {
-    name
-    numEntrants
-    startAt
-    videogame { id name }
-    tournament { name city }
-    standings(query: { page: 1, perPage: 24 }) {
-      nodes {
-        placement
-        entrant {
-          id
-          name
-          participants { gamerTag prefix }
-        }
-      }
-    }
-  }
-}
-`
-
-const SETS_QUERY = `
-query Top8Sets($slug: String!, $ids: [ID]!) {
-  event(slug: $slug) {
-    sets(page: 1, perPage: 50, sortType: RECENT, filters: { entrantIds: $ids }) {
-      nodes {
-        games {
-          selections {
-            character { name }
-            entrant { id }
-          }
-        }
-      }
-    }
-  }
-}
-`
-
-const SETS_FALLBACK_QUERY = `
-query Top8SetsFallback($slug: String!) {
-  event(slug: $slug) {
-    sets(page: 1, perPage: 80, sortType: RECENT) {
-      nodes {
-        games {
-          selections {
-            character { name }
-            entrant { id }
-          }
-        }
-      }
-    }
-  }
-}
-`
-
-type StandingNode = {
-  placement: number
-  entrant: {
-    id: number | string
-    name: string
-    participants: Array<{ gamerTag: string; prefix: string | null }>
-  } | null
-}
-
-type GqlStandings = {
-  name: string
-  numEntrants: number | null
-  startAt: number | null
-  videogame: { id: number; name: string } | null
-  tournament: { name: string; city: string | null } | null
-  standings: { nodes: StandingNode[] } | null
-}
-
-type GqlSets = {
-  sets: {
-    nodes: Array<{
-      games: Array<{
-        selections: Array<{
-          character: { name: string } | null
-          entrant: { id: number | string } | null
-        }> | null
-      }> | null
-    }> | null
-  } | null
 }
 
 async function startggGql<T>(
@@ -151,85 +53,31 @@ async function startggGql<T>(
   return event
 }
 
-function assignStandings(nodes: StandingNode[]) {
-  const players = assignTop8Slots([])
-  const idBySlot = new Map<number, string>()
-  const ranked = nodes
-    .filter((n) => n.entrant && n.placement >= 1 && n.placement <= 8)
-    .sort(
-      (a, b) =>
-        a.placement - b.placement ||
-        String(a.entrant?.id ?? '').localeCompare(String(b.entrant?.id ?? '')),
-    )
-
-  ranked.slice(0, 8).forEach((node, index) => {
-    if (!node.entrant) return
-    const p = node.entrant.participants[0]
-    players[index] = {
-      placement: node.placement,
-      tag: p?.gamerTag || node.entrant.name,
-      prefix: p?.prefix ?? '',
-      characterNames: [],
-    }
-    idBySlot.set(index, String(node.entrant.id))
-  })
-  return { players, idBySlot }
-}
-
-function collectCharacters(sets: GqlSets['sets'], allowedIds: Set<string>) {
-  const charCount = new Map<string, Map<string, number>>()
-  for (const set of sets?.nodes ?? []) {
-    for (const game of set?.games ?? []) {
-      for (const sel of game?.selections ?? []) {
-        const eid = sel?.entrant?.id == null ? '' : String(sel.entrant.id)
-        const cname = sel?.character?.name
-        if (!eid || !cname || !allowedIds.has(eid)) continue
-        const bag = charCount.get(eid) ?? new Map<string, number>()
-        bag.set(cname, (bag.get(cname) ?? 0) + 1)
-        charCount.set(eid, bag)
-      }
-    }
-  }
-  const ranked = new Map<string, string[]>()
-  for (const [id, bag] of charCount) {
-    ranked.set(
-      id,
-      [...bag.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([name]) => name)
-        .slice(0, 3),
-    )
-  }
-  return ranked
-}
-
 async function importStartggServer(
   url: string,
   token: string,
 ): Promise<TournamentImport> {
   const slug = parseEventSlug(url)
-  let event: GqlStandings
+  let event: StartggStandingsEvent
   try {
-    event = await startggGql<GqlStandings>(STANDINGS_QUERY, { slug }, token)
+    event = await startggGql<StartggStandingsEvent>(STARTGG_STANDINGS_QUERY, { slug }, token)
   } catch {
-    event = await startggGql<GqlStandings>(STANDINGS_FALLBACK_QUERY, { slug }, token)
+    event = await startggGql<StartggStandingsEvent>(STARTGG_STANDINGS_FALLBACK_QUERY, { slug }, token)
   }
 
-  const { players, idBySlot } = assignStandings(event.standings?.nodes ?? [])
+  const rawNodes = event.standings?.nodes ?? []
+  const isTeam = startggEventIsTeam(event, rawNodes)
+  const { players, idBySlot, memberParticipantIds } = assignStartggStandings(rawNodes, isTeam)
   const ids = [...new Set(idBySlot.values())]
   if (ids.length) {
     try {
-      let setEvent: GqlSets
+      let setEvent: StartggSetsEvent
       try {
-        setEvent = await startggGql<GqlSets>(SETS_QUERY, { slug, ids }, token)
+        setEvent = await startggGql<StartggSetsEvent>(STARTGG_SETS_QUERY, { slug, ids }, token)
       } catch {
-        setEvent = await startggGql<GqlSets>(SETS_FALLBACK_QUERY, { slug }, token)
+        setEvent = await startggGql<StartggSetsEvent>(STARTGG_SETS_FALLBACK_QUERY, { slug }, token)
       }
-      const chars = collectCharacters(setEvent.sets, new Set(ids))
-      for (const [slot, eid] of idBySlot) {
-        const names = chars.get(eid)
-        if (names?.length) players[slot].characterNames = names
-      }
+      applyStartggCharacters(players, idBySlot, memberParticipantIds, setEvent.sets)
     } catch {
       // characters optional
     }
@@ -242,6 +90,7 @@ async function importStartggServer(
     date: event.startAt ? new Date(event.startAt * 1000).toISOString().slice(0, 10) : '',
     videogameName: event.videogame?.name ?? '',
     numEntrants: event.numEntrants,
+    isTeam,
     players,
   }
 }
@@ -326,43 +175,8 @@ async function importChallongeServer(
     date: formatDate(tournament.completed_at ?? tournament.started_at),
     videogameName: tournament.game_name ?? '',
     numEntrants: tournament.participants_count ?? ranked.length,
+    isTeam: false,
     players,
-  }
-}
-
-type ParryUser = {
-  gamerTag?: string
-  firstName?: string
-  lastName?: string
-  sponsorName?: string
-}
-
-type ParryResult = {
-  placement?: {
-    placement?: number
-    eventEntrant?: {
-      name?: string
-      entrant?: { usersList?: ParryUser[] }
-    }
-  }
-}
-
-function parryDisplayName(result: ParryResult): { tag: string; prefix: string } {
-  const users = result.placement?.eventEntrant?.entrant?.usersList ?? []
-  const teamName = result.placement?.eventEntrant?.name?.trim()
-  if (teamName) return { tag: teamName, prefix: '' }
-  if (users.length === 0) return { tag: '', prefix: '' }
-  if (users.length === 1) {
-    const u = users[0]
-    const tag =
-      u.gamerTag?.trim() ||
-      [u.firstName, u.lastName].filter(Boolean).join(' ').trim() ||
-      ''
-    return { tag, prefix: u.sponsorName?.trim() ?? '' }
-  }
-  return {
-    tag: users.map((u) => u.gamerTag?.trim()).filter(Boolean).join(' / '),
-    prefix: users.find((u) => u.sponsorName?.trim())?.sponsorName?.trim() ?? '',
   }
 }
 
@@ -379,24 +193,17 @@ async function importParryServer(urlOrSlug: string): Promise<TournamentImport> {
   })
   if (!upstream.ok) throw new Error(`无法打开 parry.gg 页面（${upstream.status}）`)
   const html = await upstream.text()
-  const payload = parseParryStandingsHtml(html) as {
-    tournamentName: string
-    eventName: string
-    date: string
-    videogameName: string
-    numEntrants: number
-    results: ParryResult[]
-  }
+  const payload = parseParryStandingsHtml(html)
 
   const players = assignTop8Slots(
     payload.results
       .map((result) => {
         const placement = result.placement?.placement
-        const { tag, prefix } = parryDisplayName(result)
-        if (!placement || !tag) return null
-        return { placement, tag, prefix }
+        const fields = parryEntrantFields(result)
+        if (!placement || !fields.tag) return null
+        return { placement, ...fields }
       })
-      .filter((e): e is { placement: number; tag: string; prefix: string } => Boolean(e)),
+      .filter((e): e is NonNullable<typeof e> => Boolean(e)),
   )
 
   if (players.filter((p) => p.tag).length === 0) {
@@ -410,6 +217,7 @@ async function importParryServer(urlOrSlug: string): Promise<TournamentImport> {
     date: payload.date,
     videogameName: payload.videogameName,
     numEntrants: payload.numEntrants,
+    isTeam: importIsTeam(players),
     players,
   }
 }

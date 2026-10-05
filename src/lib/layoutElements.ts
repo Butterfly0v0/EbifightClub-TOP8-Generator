@@ -14,7 +14,7 @@ import type {
   TextContentSource,
   Top8Doc,
 } from '../types'
-import { fontFamily } from './fonts'
+import { canvasFont } from './fonts'
 
 export type HeaderTextKey = keyof Omit<HeaderLayoutTexts, 'customLogo' | 'gameLogo' | 'extras'>
 export type HeaderImageKey = 'customLogo' | 'gameLogo'
@@ -314,6 +314,38 @@ export function defaultHeaderTexts(
           color: 'rgba(247,243,234,0.68)',
         }),
       }
+    case 'prism':
+      return {
+        customLogo: img({ x: rw - 20 - 160, y: 2, w: 160, h: 92 }),
+        gameLogo: img({ x: rw - 20 - 160 - 16 - 420, y: 6, w: 420, h: 84 }),
+        top8Label: tb({
+          x: 68,
+          y: 22,
+          w: 140,
+          h: 40,
+          fontSize: 32,
+          fontWeight: '700',
+          color: '#f4f1ff',
+        }),
+        tournamentName: tb({
+          x: 248,
+          y: 16,
+          w: Math.max(240, rw - 248 - 620),
+          h: 32,
+          fontSize: 28,
+          fontWeight: '700',
+          color: '#f4f1ff',
+        }),
+        metaLine: tb({
+          x: 248,
+          y: 52,
+          w: Math.max(240, rw - 248 - 620),
+          h: 20,
+          fontSize: 13,
+          fontWeight: '600',
+          color: '#22d3ee',
+        }),
+      }
     default:
       return {
         customLogo: img({ x: 22, y: 14, w: 72, h: rh - 28 }),
@@ -364,6 +396,7 @@ export function defaultSlotTextLayout(
   const animefgc = theme === 'animefgc'
   const tokon = theme === 'tokon'
   const ebifc = theme === 'ebifc'
+  const prism = theme === 'prism'
   if (animefgc) {
     const isChamp = slot.playerIndex === 0
     if (isChamp) {
@@ -452,6 +485,39 @@ export function defaultSlotTextLayout(
         fontSize: 12,
         fontWeight: '600',
         color: 'rgba(247,243,234,0.85)',
+      }),
+    }
+  }
+  if (prism) {
+    const plateH = slot.playerIndex === 0 ? 56 : slot.h < 280 ? 34 : 42
+    const cut = slot.playerIndex === 0 ? 22 : 16
+    return {
+      rank: tb({
+        x: 18,
+        y: 12,
+        w: 160,
+        h: slot.placeSize + 8,
+        fontSize: slot.placeSize,
+        fontWeight: '700',
+        color: '#a78bfa',
+      }),
+      name: tb({
+        x: cut + 10,
+        y: slot.h - plateH + 8,
+        w: slot.w - cut - 24,
+        h: plateH - 14,
+        fontSize: slot.nameSize,
+        fontWeight: '800',
+        color: '#f4f1ff',
+      }),
+      twitter: tb({
+        x: cut + 10,
+        y: slot.h - 18,
+        w: slot.w - cut - 24,
+        h: 14,
+        fontSize: 12,
+        fontWeight: '500',
+        color: '#22d3ee',
       }),
     }
   }
@@ -631,13 +697,18 @@ export function normalizeSlotTextLayout(raw: Partial<SlotTextLayout> | undefined
   return Object.keys(out).length > 0 ? out : undefined
 }
 
-function formatEntrants(raw: string | undefined, locale: Top8Doc['posterLocale']): string {
+function formatEntrants(
+  raw: string | undefined,
+  locale: Top8Doc['posterLocale'],
+  teamMode = false,
+): string {
   const t = (raw ?? '').trim()
   if (!t) return ''
   const n = Number(t)
   if (!Number.isFinite(n) || n < 0) return t
   const count = Math.round(n)
-  return locale === 'en' ? `${count} participants` : `${count} 参赛者`
+  if (locale === 'en') return `${count} ${teamMode ? 'teams' : 'participants'}`
+  return `${count} ${teamMode ? '队伍' : '参赛者'}`
 }
 
 export function resolveHeaderTextContent(
@@ -652,7 +723,7 @@ export function resolveHeaderTextContent(
       return doc.subtitle || 'Weekly TOP 8'
     case 'metaLine':
       return (
-        [doc.subtitle, formatEntrants(doc.numEntrants, locale), doc.date]
+        [doc.subtitle, formatEntrants(doc.numEntrants, locale, doc.teamMode), doc.date]
           .filter(Boolean)
           .join('  ·  ') || 'TOP 8'
       )
@@ -726,13 +797,13 @@ function fitTextInBox(
   maxWidth: number,
   size: number,
   weight: string,
-  family: string,
+  fontId: string,
 ): number {
   let s = size
-  ctx.font = `${weight} ${s}px ${family}`
+  ctx.font = canvasFont(s, fontId, weight)
   while (s > 8 && ctx.measureText(text).width > maxWidth) {
     s -= 1
-    ctx.font = `${weight} ${s}px ${family}`
+    ctx.font = canvasFont(s, fontId, weight)
   }
   return s
 }
@@ -746,7 +817,7 @@ export function drawLayoutTextBox(
   strokeOutline = false,
 ) {
   if (!text || box.visible === false) return
-  const family = fontFamily(box.fontId ?? defaultFontId)
+  const fontId = box.fontId ?? defaultFontId
   const weight = box.fontWeight ?? '700'
   let color = box.color
   if (!color && accentRgb) {
@@ -755,8 +826,8 @@ export function drawLayoutTextBox(
   if (!color) color = '#f7f3ea'
 
   const align = box.align ?? 'left'
-  const fitted = fitTextInBox(ctx, text, box.w - 4, box.fontSize, weight, family)
-  ctx.font = `${weight} ${fitted}px ${family}`
+  const fitted = fitTextInBox(ctx, text, box.w - 4, box.fontSize, weight, fontId)
+  ctx.font = canvasFont(fitted, fontId, weight)
   ctx.fillStyle = color
   ctx.textBaseline = 'top'
 
@@ -856,7 +927,7 @@ export function resolveTextBoxContent(
   if (ctx.scope === 'header') {
     if (source === 'date') return ctx.doc.date || ''
     if (source === 'numEntrants') {
-      return formatEntrants(ctx.doc.numEntrants, ctx.doc.posterLocale ?? 'zh')
+      return formatEntrants(ctx.doc.numEntrants, ctx.doc.posterLocale ?? 'zh', ctx.doc.teamMode)
     }
     if (
       source === 'tournamentName' ||

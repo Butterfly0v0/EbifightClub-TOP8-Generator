@@ -66,6 +66,7 @@ Invoke-RestMethod `
 | `startggToken` | 否* | start.gg Token（限流时建议提供） |
 | `challongeApiKey` | Challonge 必填* | Challonge API Key |
 | `tournamentName` / `subtitle` / `date` / `numEntrants` | 否 | 覆盖导入结果 |
+| `teamMode` | 否 | `true` 时按组队赛出图。用赛事链接导入时，start.gg / parry.gg 组队赛会自动打开 |
 | `backgroundImageUrl` / `logoUrl` / `accent` / `background` / `backgroundDim` | 否 | 海报外观 |
 | `customLayout` | 否 | 自定义布局 JSON（配合 `layoutId: "custom"`） |
 
@@ -82,6 +83,7 @@ Invoke-RestMethod `
 | `paragon` | 竞技方格（仿 Paragonline） | 全宽网格：左侧冠军、右上 2–4、右下 5–8，白底栏 + 红名条 |
 | `animefgc` | AnimeFGC（仿 AnimeFGC） | 左侧冠军大图 + 右侧 2–8 名竖排列表，顶部赛事标题 |
 | `ebifc` | 炸虾像素（EbifightClub） | 像素街机风方格 + 白边贴纸框 + 血条名牌 |
+| `prism` | 棱镜 TOP8 | 冠军居中聚光，2–5 名环抱两侧，6–8 名底部横条，紫青棱镜切面名牌 |
 | `custom` | 自定义 | 需同时传 `customLayout`（布局编辑器导出的 JSON） |
 
 也可调用 `GET /api/v1/top8/layouts` 查看当前服务端内置列表。
@@ -150,6 +152,30 @@ curl -X POST http://localhost:5173/api/v1/top8/import ^
 ```
 
 `players` 最多 8 名；不足会补空位。`codename` 须与 StreamHelperAssets 中该游戏的角色码一致。
+
+组队赛在请求里加 `teamMode: true`，每个名次用 `tag` 当队名，并用 `members` 列出队员（每人一张主立绘，最多 5 人）。所有内置布局都会把队员立绘并排画进该名次框：
+
+```json
+{
+  "gameCode": "sf6",
+  "layoutId": "classic",
+  "teamMode": true,
+  "tournamentName": "Crews Weekly",
+  "players": [
+    {
+      "placement": 1,
+      "tag": "Team Liquid",
+      "members": [
+        { "tag": "Daigo", "characters": [{ "codename": "Ryu" }] },
+        { "tag": "Tokido", "characters": [{ "codename": "Ken" }] },
+        { "tag": "Fuudo", "characters": [{ "codename": "Luke" }] }
+      ]
+    }
+  ]
+}
+```
+
+start.gg 组队赛（`teamRosterSize.maxPlayers > 1`，或前八名参赛者有多名队员）和 parry.gg 多人报名会自动打开组队赛模式，并把近期对局里的角色归到对应队员。Challonge 不提供队员名单，导入后仍是单人赛，可在页面上手动打开组队赛模式再填队员。
 
 也可用 `doc` 传入接近完整的海报文档（与页面存档结构相同），字段优先级见 `src/lib/top8Api.ts`。
 

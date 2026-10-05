@@ -120,6 +120,7 @@ export async function importChallongeTop8(slugOrUrl: string): Promise<Tournament
     date: formatDate(tournament.completed_at ?? tournament.started_at),
     videogameName: tournament.game_name ?? '',
     numEntrants: tournament.participants_count ?? ranked.length,
+    isTeam: false,
     players,
   }
 }

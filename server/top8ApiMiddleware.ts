@@ -140,7 +140,7 @@ async function renderJobWithPlaywright(origin: string, jobId: string): Promise<B
       viewport: { width: 1280, height: 800 },
     })
     const url = `${origin}/export-api.html?job=${encodeURIComponent(jobId)}`
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 })
+    await page.goto(url, { waitUntil: 'load', timeout: 60000 })
     await page.waitForFunction(
       () =>
         Boolean((window as unknown as { __TOP8_RENDER_DONE__?: boolean }).__TOP8_RENDER_DONE__) ||

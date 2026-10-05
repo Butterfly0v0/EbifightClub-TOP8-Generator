@@ -1,4 +1,9 @@
-import { assignTop8Slots, type TournamentImport } from './importTypes'
+import {
+  assignTop8Slots,
+  importIsTeam,
+  type ImportedMember,
+  type TournamentImport,
+} from './importTypes'
 
 export type ParrySlugPath = {
   tournamentSlug: string
@@ -47,28 +52,41 @@ export function parseParrySlugPath(input: string): ParrySlugPath {
   )
 }
 
-function parryDisplayName(result: ParryResult): { tag: string; prefix: string } {
+function userTag(user: ParryUser): string {
+  return (
+    user.gamerTag?.trim() ||
+    [user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
+    ''
+  )
+}
+
+export function parryEntrantFields(result: ParryResult): {
+  tag: string
+  prefix: string
+  members?: ImportedMember[]
+} {
   const users = result.placement?.eventEntrant?.entrant?.usersList ?? []
   const teamName = result.placement?.eventEntrant?.name?.trim()
+
+  if (users.length > 1) {
+    const members = users
+      .map((user) => ({
+        tag: userTag(user),
+        prefix: user.sponsorName?.trim() ?? '',
+        characterNames: [] as string[],
+      }))
+      .filter((member) => member.tag)
+    return {
+      tag: teamName || members.map((member) => member.tag).join(' / '),
+      prefix: '',
+      members: members.length > 0 ? members : undefined,
+    }
+  }
+
   if (teamName) return { tag: teamName, prefix: '' }
-
   if (users.length === 0) return { tag: '', prefix: '' }
-  if (users.length === 1) {
-    const u = users[0]
-    const tag =
-      u.gamerTag?.trim() ||
-      [u.firstName, u.lastName].filter(Boolean).join(' ').trim() ||
-      ''
-    return { tag, prefix: u.sponsorName?.trim() ?? '' }
-  }
-
-  return {
-    tag: users
-      .map((u) => u.gamerTag?.trim())
-      .filter(Boolean)
-      .join(' / '),
-    prefix: users.find((u) => u.sponsorName?.trim())?.sponsorName?.trim() ?? '',
-  }
+  const user = users[0]
+  return { tag: user ? userTag(user) : '', prefix: user?.sponsorName?.trim() ?? '' }
 }
 
 function normalizeParryUrl(input: string): string {
@@ -93,11 +111,11 @@ export async function importParryggTop8(urlOrSlug: string): Promise<TournamentIm
     payload.results
       .map((result) => {
         const placement = result.placement?.placement
-        const { tag, prefix } = parryDisplayName(result)
-        if (!placement || !tag) return null
-        return { placement, tag, prefix }
+        const fields = parryEntrantFields(result)
+        if (!placement || !fields.tag) return null
+        return { placement, ...fields }
       })
-      .filter((e): e is { placement: number; tag: string; prefix: string } => Boolean(e)),
+      .filter((e): e is NonNullable<typeof e> => Boolean(e)),
   )
 
   const filled = players.filter((p) => p.tag).length
@@ -112,6 +130,7 @@ export async function importParryggTop8(urlOrSlug: string): Promise<TournamentIm
     date: payload.date,
     videogameName: payload.videogameName,
     numEntrants: payload.numEntrants,
+    isTeam: importIsTeam(players),
     players,
   }
 }

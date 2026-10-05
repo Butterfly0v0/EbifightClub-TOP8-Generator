@@ -42,7 +42,12 @@ export const FONT_MAP = Object.fromEntries(FONT_PRESETS.map((f) => [f.id, f])) a
   FontPreset
 >
 
-const loaded = new Set<string>()
+const stylesheetPromises = new Map<string, Promise<void>>()
+const facePromises = new Map<string, Promise<void>>()
+
+const FONT_WAIT_MS = 12000
+const FONT_LOAD_SAMPLE =
+  'TOP 8 1st 2nd 3rd 4th 5th 6th 7th 8th ABCDEFGHIJKLMNOPQRSTUVWXYZ 赛事选手名'
 
 export { initImportedFonts, listImportedFonts, systemFontId }
 export type { ImportedFont }
@@ -78,26 +83,198 @@ export function fontFamily(id: string | undefined, fallback = 'noto-sans'): stri
   return FONT_MAP[fallback]?.family ?? FONT_MAP[fallback].family
 }
 
-export function ensureFontLoaded(id: string | undefined): void {
-  if (!id) return
-  const preset = FONT_MAP[id]
-  if (preset?.google) {
-    if (loaded.has(preset.id)) return
-    loaded.add(preset.id)
+function primaryFamilyName(cssFamily: string): string {
+  const first = cssFamily.split(',')[0]?.trim() ?? cssFamily
+  return first.replace(/^["']|["']$/g, '')
+}
+
+function googleWeights(preset: FontPreset): number[] {
+  const match = preset.google?.match(/wght@([0-9;]+)/)
+  if (match) {
+    return match[1]
+      .split(';')
+      .map((w) => Number(w))
+      .filter((n) => Number.isFinite(n) && n > 0)
+  }
+  return [400]
+}
+
+/** CSS font shorthand for canvas, using a weight the face actually ships. */
+export function canvasFont(
+  size: number,
+  fontId: string | undefined,
+  weight = '700',
+  fallback = 'noto-sans',
+  extra = '',
+): string {
+  const w = resolveFontWeight(fontId, weight, fallback)
+  const family = fontFamily(fontId, fallback)
+  const prefix = extra.trim() ? `${extra.trim()} ` : ''
+  return `${prefix}${w} ${size}px ${family}`
+}
+
+/** Map a requested weight onto one the face actually ships (e.g. Press Start 2P is 400 only). */
+export function resolveFontWeight(id: string | undefined, requested: string, fallbackId = 'noto-sans'): string {
+  const n = Number.parseInt(requested, 10)
+  if (!Number.isFinite(n)) return requested
+  const preset = id ? FONT_MAP[id] : FONT_MAP[fallbackId]
+  if (!preset?.google) return requested
+  const available = googleWeights(preset)
+  if (available.length === 0) return requested
+  let best = available[0]
+  for (const w of available) {
+    if (Math.abs(w - n) < Math.abs(best - n)) best = w
+  }
+  return String(best)
+}
+
+function withTimeout(promise: Promise<void>, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve(), ms)
+    promise.then(
+      () => {
+        window.clearTimeout(timer)
+        resolve()
+      },
+      () => {
+        window.clearTimeout(timer)
+        resolve()
+      },
+    )
+  })
+}
+
+function waitForStylesheet(link: HTMLLinkElement): Promise<void> {
+  if (link.sheet || link.dataset.fontReady === '1') return Promise.resolve()
+  return new Promise((resolve) => {
+    let settled = false
+    const done = () => {
+      if (settled) return
+      settled = true
+      link.dataset.fontReady = '1'
+      resolve()
+    }
+    link.addEventListener('load', done, { once: true })
+    link.addEventListener('error', done, { once: true })
+    if (link.sheet) {
+      done()
+      return
+    }
+    window.setTimeout(done, FONT_WAIT_MS)
+  })
+}
+
+function waitForExistingGoogleStylesheets(): Promise<void> {
+  const links = [...document.querySelectorAll('link[rel="stylesheet"]')].filter((el) => {
+    const href = (el as HTMLLinkElement).href
+    return href.includes('fonts.googleapis.com') || href.includes('fonts.gstatic.com')
+  }) as HTMLLinkElement[]
+  return Promise.all(links.map(waitForStylesheet)).then(() => undefined)
+}
+
+function injectGoogleStylesheet(preset: FontPreset): Promise<void> {
+  if (!preset.google) return Promise.resolve()
+  const cached = stylesheetPromises.get(preset.id)
+  if (cached) return cached
+
+  const href = `https://fonts.googleapis.com/css2?family=${preset.google}&display=swap`
+  const promise = (async () => {
+    const existing =
+      (document.querySelector(`link[data-google-font="${preset.id}"]`) as HTMLLinkElement | null) ??
+      (document.querySelector(`link[href="${href}"]`) as HTMLLinkElement | null)
+    if (existing) {
+      existing.dataset.googleFont = preset.id
+      await waitForStylesheet(existing)
+      return
+    }
     const link = document.createElement('link')
     link.rel = 'stylesheet'
-    link.href = `https://fonts.googleapis.com/css2?family=${preset.google}&display=swap`
+    link.href = href
+    link.dataset.googleFont = preset.id
     document.head.appendChild(link)
-    return
-  }
-  const imported = getImportedFont(id)
-  if (imported) {
-    registerImportedFontFace(imported)
-  }
+    await waitForStylesheet(link)
+  })()
+
+  stylesheetPromises.set(preset.id, promise)
+  return promise
+}
+
+async function loadFacesForFamily(cssFamily: string, weights: number[], sampleText: string): Promise<void> {
+  const family = primaryFamilyName(cssFamily)
+  if (!family || typeof document === 'undefined' || !document.fonts) return
+  const quoted = family.includes(' ') ? `"${family}"` : family
+  await Promise.all(
+    weights.map((w) =>
+      document.fonts.load(`${w} 64px ${quoted}`, sampleText).then(
+        () => undefined,
+        () => undefined,
+      ),
+    ),
+  )
+}
+
+function loadFontFaces(id: string | undefined, sampleText = FONT_LOAD_SAMPLE): Promise<void> {
+  if (!id) return Promise.resolve()
+  const key = `${id}\0${sampleText}`
+  const cached = facePromises.get(key)
+  if (cached) return cached
+
+  const run = (async () => {
+    const preset = FONT_MAP[id]
+    if (preset?.google) {
+      await waitForExistingGoogleStylesheets()
+      const family = primaryFamilyName(preset.family)
+      const quoted = family.includes(' ') ? `"${family}"` : family
+      const alreadyOnPage = googleWeights(preset).some((w) => {
+        try {
+          return document.fonts.check(`${w} 16px ${quoted}`)
+        } catch {
+          return false
+        }
+      })
+      if (!alreadyOnPage) await injectGoogleStylesheet(preset)
+      await loadFacesForFamily(preset.family, googleWeights(preset), sampleText)
+      return
+    }
+    const imported = getImportedFont(id)
+    if (imported) {
+      registerImportedFontFace(imported)
+      await loadFacesForFamily(`"${imported.faceFamily}"`, [400, 700], sampleText)
+    }
+  })()
+
+  facePromises.set(key, withTimeout(run, FONT_WAIT_MS))
+  return facePromises.get(key)!
+}
+
+export function ensureFontLoaded(id: string | undefined): void {
+  void loadFontFaces(id)
 }
 
 export function ensureFontsLoaded(...ids: (string | undefined)[]): void {
   for (const id of ids) ensureFontLoaded(id)
+}
+
+/**
+ * Wait until Google / imported faces are actually usable on canvas.
+ * `document.fonts.ready` is not enough: it does not wait for stylesheets injected after first paint.
+ */
+export async function waitForFonts(
+  ids: (string | undefined)[],
+  sampleText = '',
+): Promise<void> {
+  const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))]
+  const text = `${FONT_LOAD_SAMPLE} ${sampleText}`.trim()
+  await Promise.all(unique.map((id) => loadFontFaces(id, text)))
+  if (typeof document === 'undefined' || !document.createElement) return
+  const ctx = document.createElement('canvas').getContext('2d')
+  if (!ctx) return
+  for (const id of unique) {
+    ctx.font = canvasFont(64, id, '400')
+    ctx.fillText('TOP 8', 0, 64)
+    ctx.font = canvasFont(64, id, '700')
+    ctx.fillText('TOP 8', 0, 64)
+  }
 }
 
 export const DEFAULT_TITLE_FONT = 'noto-sans'

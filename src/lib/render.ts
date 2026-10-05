@@ -10,6 +10,7 @@ import type {
   PlayerIdStyleId,
   PlayerSlot,
   Point,
+  TeamMember,
   Top8Doc,
 } from '../types'
 import {
@@ -23,6 +24,11 @@ import {
   resolveExtraBoxFill,
 } from './boxThemes'
 import { combinedArtScale, resolveArtScale } from './artScale'
+import {
+  extraCharactersForRender,
+  hasCharArt,
+  resolvePickEyes,
+} from './characterArt'
 import {
   computeExtraCharBoxes,
   resolveArtHeight,
@@ -42,8 +48,9 @@ import {
   offsetTextBox,
   resolveTextBoxContent,
 } from './layoutElements'
-import { fontFamily } from './fonts'
+import { canvasFont } from './fonts'
 import { rankColor, rankLabel } from './rank'
+import { memberMainPick, teamArtKey, teamMembersForRender } from './teamMode'
 import { isImageSrc } from './userAssets'
 
 function roundRect(
@@ -70,13 +77,14 @@ function fitText(
   maxWidth: number,
   size: number,
   weight = '700',
-  family = '"Noto Sans SC", "Segoe UI", sans-serif',
+  fontId?: string,
+  fallback = 'noto-sans',
 ) {
   let s = size
-  ctx.font = `${weight} ${s}px ${family}`
+  ctx.font = canvasFont(s, fontId, weight, fallback)
   while (s > 12 && ctx.measureText(text).width > maxWidth) {
     s -= 1
-    ctx.font = `${weight} ${s}px ${family}`
+    ctx.font = canvasFont(s, fontId, weight, fallback)
   }
   return s
 }
@@ -87,20 +95,12 @@ function hexToRgb(hex: string): [number, number, number] {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
 
-function eyesightOf(pack: PackConfig, codename: string, skin: number): Point | undefined {
-  return pack.eyesights?.[codename]?.[String(skin)] ?? pack.eyesights?.[codename]?.['0']
-}
-
 async function tryLoad(url: string): Promise<HTMLImageElement | null> {
   try {
     return await loadImage(url)
   } catch {
     return null
   }
-}
-
-function hasCharArt(ch: PlayerSlot['characters'][number] | undefined): boolean {
-  return Boolean(ch?.customImageDataUrl || ch?.codename)
 }
 
 function drawCover(
@@ -157,22 +157,34 @@ export async function collectImages(
     )
   }
 
-  for (const [index, player] of doc.players.entries()) {
-    for (const [i, ch] of player.characters.entries()) {
-      if (!hasCharArt(ch)) continue
-      const key = `${index}:${i}`
-      if (ch.customImageDataUrl) {
-        queue(key, ch.customImageDataUrl)
-        continue
-      }
-      if (!game || !pack || !ch.codename) continue
-      const url = characterUrl(game, doc.packId, pack, ch.codename, ch.skin)
-      jobs.push(
-        tryLoad(url).then((img) => {
-          if (img) map.set(key, img)
-        }),
-      )
+  const queueChar = (key: string, ch: PlayerSlot['characters'][number]) => {
+    if (ch.customImageDataUrl) {
+      queue(key, ch.customImageDataUrl)
+      return
     }
+    if (!game || !pack || !ch.codename) return
+    const url = characterUrl(game, doc.packId, pack, ch.codename, ch.skin)
+    jobs.push(
+      tryLoad(url).then((img) => {
+        if (img) map.set(key, img)
+      }),
+    )
+  }
+
+  for (const [index, player] of doc.players.entries()) {
+    const team = teamMembersForRender(doc, player)
+    if (team) {
+      team.forEach((member, memberIndex) => {
+        const pick = memberMainPick(member)
+        if (hasCharArt(pick)) queueChar(teamArtKey(index, memberIndex), pick)
+      })
+      continue
+    }
+    const main = player.characters[0]
+    if (hasCharArt(main)) queueChar(`${index}:0`, main)
+    extraCharactersForRender(player).forEach((ch, i) => {
+      queueChar(`${index}:${i + 1}`, ch)
+    })
   }
 
   await Promise.all(jobs)
@@ -202,6 +214,12 @@ function displayName(player: PlayerSlot): string {
   return player.tag || 'TBD'
 }
 
+/** 方格 TOP8，以及从方格克隆的自定义布局 */
+function isSquaresLayout(doc: Top8Doc): boolean {
+  if (doc.layoutId === 'squares') return true
+  return doc.layoutId === 'custom' && doc.customLayout?.basedOn === 'squares'
+}
+
 function codenameLabel(codename: string): string {
   return codename.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
@@ -209,11 +227,127 @@ function codenameLabel(codename: string): string {
 function characterLine(
   player: PlayerSlot,
   names: Map<string, string>,
+  teamMode = false,
 ): string {
+  if (teamMode && player.members?.length) {
+    return player.members
+      .map((member) => {
+        const pick = memberMainPick(member)
+        if (!hasCharArt(pick)) return ''
+        return pick.codename ? (names.get(pick.codename) ?? codenameLabel(pick.codename)) : 'Custom'
+      })
+      .filter(Boolean)
+      .join(' · ')
+  }
   return player.characters
     .filter(hasCharArt)
     .map((c) => (c.codename ? (names.get(c.codename) ?? codenameLabel(c.codename)) : 'Custom'))
     .join(' · ')
+}
+
+type ArtRect = { x: number; y: number; w: number; h: number }
+
+function teamColumns(rect: ArtRect, count: number): ArtRect[] {
+  const gap = count > 1 ? 3 : 0
+  const colW = (rect.w - gap * (count - 1)) / count
+  return Array.from({ length: count }, (_, i) => ({
+    x: rect.x + i * (colW + gap),
+    y: rect.y,
+    w: colW,
+    h: rect.h,
+  }))
+}
+
+/** 组队赛：在立绘区内并排画每位队员。返回 true 表示已按组队赛绘制。 */
+function drawTeamPortraits(
+  ctx: CanvasRenderingContext2D,
+  rect: ArtRect,
+  slot: LayoutSlot,
+  members: TeamMember[],
+  pack: PackConfig | null,
+  images: Map<string, HTMLImageElement>,
+  doc: Top8Doc,
+  artBoost: number,
+  cover: number,
+  focusX: number,
+  focusY: number,
+): boolean {
+  const cols = teamColumns(rect, members.length)
+  members.forEach((member, i) => {
+    const cell = cols[i]
+    if (!cell) return
+    const pick = memberMainPick(member)
+    const img = images.get(teamArtKey(slot.playerIndex, i))
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(cell.x, cell.y, cell.w, cell.h)
+    ctx.clip()
+    if (img && hasCharArt(pick)) {
+      drawCharacterInRect(
+        ctx,
+        img,
+        cell,
+        focusX,
+        focusY,
+        resolvePickEyes(pick, pack, img),
+        combinedArtScale(pick.artScale, doc.globalArtScale) * artBoost,
+        cover,
+      )
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,0.05)'
+      ctx.fillRect(cell.x, cell.y, cell.w, cell.h)
+      const mark = member.tag.trim().slice(0, 1) || String(i + 1)
+      ctx.fillStyle = 'rgba(255,255,255,0.28)'
+      ctx.font = canvasFont(Math.min(cell.w, cell.h) * 0.28, doc.rankFontId, '800', 'bebas')
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(mark, cell.x + cell.w / 2, cell.y + cell.h / 2)
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'alphabetic'
+    }
+    ctx.restore()
+    if (i > 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.72)'
+      ctx.fillRect(cell.x - 3, cell.y, 3, cell.h)
+    }
+  })
+  return true
+}
+
+/** 队员名贴在立绘底部。labelInsetBottom 用来让出名条/叠字，避免和队名重叠。 */
+function drawTeamMemberLabels(
+  ctx: CanvasRenderingContext2D,
+  rect: ArtRect,
+  members: TeamMember[],
+  playerFont: string,
+  labelInsetBottom: number,
+) {
+  if (rect.h < 88) return
+  const cols = teamColumns(rect, members.length)
+  members.forEach((member, i) => {
+    const cell = cols[i]
+    const name = member.tag.trim()
+    if (!cell || !name || cell.w < 46) return
+    const band = Math.min(28, Math.max(16, cell.h * 0.12))
+    const y = cell.y + cell.h - labelInsetBottom - band
+    if (y < cell.y + 8) return
+    const veil = ctx.createLinearGradient(cell.x, y, cell.x, y + band)
+    veil.addColorStop(0, 'rgba(0,0,0,0)')
+    veil.addColorStop(1, 'rgba(0,0,0,0.72)')
+    ctx.fillStyle = veil
+    ctx.fillRect(cell.x, y, cell.w, band)
+    const size = fitText(ctx, name, Math.max(12, cell.w - 10), Math.min(15, band - 4), '700', playerFont)
+    ctx.font = canvasFont(size, playerFont, '700')
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'bottom'
+    ctx.lineWidth = 3
+    ctx.strokeStyle = 'rgba(0,0,0,0.8)'
+    ctx.fillStyle = '#f7f3ea'
+    ctx.strokeText(name, cell.x + cell.w / 2, y + band - 3)
+    ctx.fillText(name, cell.x + cell.w / 2, y + band - 3)
+  })
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'alphabetic'
 }
 
 function drawTokonSideBorders(
@@ -322,10 +456,7 @@ function drawExtraCharThumbs(
     ctx.fillStyle = resolveExtraBoxFill(place, doc, boxStyle, 1)
     ctx.fill()
     if (img) {
-      const eyes =
-        pick.customImageDataUrl || !pick.codename || !pack
-          ? undefined
-          : eyesightOf(pack, pick.codename, pick.skin)
+      const eyes = resolvePickEyes(pick, pack, img)
       drawFaceThumb(
         ctx,
         img,
@@ -398,16 +529,17 @@ function renderEbifcPlayerSlot(
   const orange = '#ff8a3d'
   const blue = '#1a9fff'
   const barColor = place === 1 ? orange : place <= 3 ? accent : blue
-  const playerFont = fontFamily(doc.playerFontId)
-  const rankFont = fontFamily(doc.rankFontId, 'press-start')
+  const playerFont = doc.playerFontId
+  const rankFont = doc.rankFontId
   const plateH = place === 1 ? 52 : Math.min(44, Math.max(36, Math.round(slot.h * 0.12)))
   const twitterH = twitterStripHeight(player, 20)
   const artH = Math.max(40, slot.h - plateH - twitterH)
   const boxStyle = slot.boxStyle ?? doc.defaultBoxStyle
   const mainFrame = images.get(boxFrameKey(slot.playerIndex, 'main'))
-  const extras = player.characters.slice(1).filter((c) => hasCharArt(c))
+  const team = teamMembersForRender(doc, player)
+  const extras = team ? [] : extraCharactersForRender(player)
   const showExtraCharNames = doc.showExtraCharNames !== false
-  const hasRoster = showExtraCharNames && characterLine(player, charNames).length > 0
+  const hasRoster = showExtraCharNames && characterLine(player, charNames, doc.teamMode).length > 0
 
   // 贴纸投影
   ctx.fillStyle = 'rgba(0,0,0,0.4)'
@@ -424,17 +556,17 @@ function renderEbifcPlayerSlot(
     ctx.fillRect(slot.x, slot.y, slot.w, artH)
   }
 
+  const ebifcArt: ArtRect = { x: slot.x, y: slot.y, w: slot.w, h: artH }
   const main = player.characters[0]
   const art = images.get(`${slot.playerIndex}:0`)
-  if (art && hasCharArt(main)) {
-    const eyes =
-      main?.customImageDataUrl || !main?.codename || !pack
-        ? undefined
-        : eyesightOf(pack, main.codename, main.skin)
+  if (team) {
+    drawTeamPortraits(ctx, ebifcArt, slot, team, pack, images, doc, 1.06, 1.12, slot.focusX, slot.focusY)
+  } else if (art && hasCharArt(main)) {
+    const eyes = resolvePickEyes(main, pack, art)
     drawCharacterInRect(
       ctx,
       art,
-      { x: slot.x, y: slot.y, w: slot.w, h: artH },
+      ebifcArt,
       slot.focusX,
       slot.focusY,
       eyes,
@@ -443,7 +575,7 @@ function renderEbifcPlayerSlot(
     )
   } else {
     ctx.fillStyle = 'rgba(255,255,255,0.08)'
-    ctx.font = `700 ${Math.min(artH, slot.w) * 0.28}px ${rankFont}`
+    ctx.font = canvasFont(Math.min(artH, slot.w) * 0.28, rankFont, '700', 'press-start')
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(String(place), slot.x + slot.w / 2, slot.y + artH / 2)
@@ -456,6 +588,7 @@ function renderEbifcPlayerSlot(
   veil.addColorStop(1, 'rgba(8,12,20,0.72)')
   ctx.fillStyle = veil
   ctx.fillRect(slot.x, slot.y, slot.w, artH)
+  if (team) drawTeamMemberLabels(ctx, ebifcArt, team, playerFont, 8)
   ctx.restore()
 
   if (mainFrame) {
@@ -470,7 +603,7 @@ function renderEbifcPlayerSlot(
   const namePad = 12
   const nameMax = slot.w - namePad * 2 - (place === 1 ? 70 : 56)
   const ns = fitText(ctx, name, nameMax, slot.nameSize, '800', playerFont)
-  ctx.font = `800 ${ns}px ${playerFont}`
+  ctx.font = canvasFont(ns, playerFont, '800')
   ctx.textBaseline = 'middle'
   ctx.strokeStyle = 'rgba(0,0,0,0.85)'
   ctx.lineWidth = 4
@@ -479,7 +612,7 @@ function renderEbifcPlayerSlot(
   ctx.fillText(name, slot.x + namePad, plateY + plateH / 2)
 
   const rankText = rankLabel(place)
-  ctx.font = `700 ${Math.min(16, plateH - 14)}px ${rankFont}`
+  ctx.font = canvasFont(Math.min(16, plateH - 14), rankFont, '700', 'press-start')
   ctx.textAlign = 'right'
   ctx.fillStyle = '#ffffff'
   ctx.strokeText(rankText, slot.x + slot.w - namePad, plateY + plateH / 2)
@@ -492,16 +625,16 @@ function renderEbifcPlayerSlot(
     ctx.fillRect(slot.x, plateY + plateH, slot.w, twitterH)
     ctx.fillStyle = 'rgba(247,243,234,0.85)'
     const ts = fitText(ctx, handle, slot.w - 20, 12, '600', playerFont)
-    ctx.font = `600 ${ts}px ${playerFont}`
+    ctx.font = canvasFont(ts, playerFont, '600')
     ctx.textBaseline = 'middle'
     ctx.fillText(handle, slot.x + 10, plateY + plateH + twitterH / 2)
   }
 
   if (showExtraCharNames && hasRoster) {
-    const roster = characterLine(player, charNames)
+    const roster = characterLine(player, charNames, doc.teamMode)
     ctx.fillStyle = 'rgba(247,243,234,0.75)'
     const rs = fitText(ctx, roster, nameMax, 12, '500', playerFont)
-    ctx.font = `500 ${rs}px ${playerFont}`
+    ctx.font = canvasFont(rs, playerFont, '500')
     ctx.textBaseline = 'bottom'
     ctx.strokeStyle = 'rgba(0,0,0,0.7)'
     ctx.lineWidth = 3
@@ -559,10 +692,7 @@ function drawEbifcExtraThumbs(
       ctx.beginPath()
       ctx.rect(x + 3, y + 3, thumb - 6, thumb - 6)
       ctx.clip()
-      const eyes =
-        pick.customImageDataUrl || !pick.codename || !pack
-          ? undefined
-          : eyesightOf(pack, pick.codename, pick.skin)
+      const eyes = resolvePickEyes(pick, pack, img)
       drawFaceThumb(
         ctx,
         img,
@@ -613,6 +743,331 @@ function drawEbifcBackdrop(ctx: CanvasRenderingContext2D, width: number, height:
   ctx.restore()
 }
 
+function prismPlateHeight(place: number, slotH: number): number {
+  if (place === 1) return 56
+  if (slotH < 280) return 34
+  return 42
+}
+
+function prismPlatePath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  cut: number,
+) {
+  ctx.beginPath()
+  ctx.moveTo(x + cut, y)
+  ctx.lineTo(x + w, y)
+  ctx.lineTo(x + w, y + h)
+  ctx.lineTo(x, y + h)
+  ctx.lineTo(x, y + cut)
+  ctx.closePath()
+}
+
+function drawPrismBackdrop(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  accent: [number, number, number],
+) {
+  const [ar, ag, ab] = accent
+  ctx.save()
+
+  const spot = ctx.createRadialGradient(960, 420, 40, 960, 420, 780)
+  spot.addColorStop(0, `rgba(${ar},${ag},${ab},0.22)`)
+  spot.addColorStop(0.42, `rgba(${ar},${ag},${ab},0.07)`)
+  spot.addColorStop(1, 'rgba(8,6,26,0)')
+  ctx.fillStyle = spot
+  ctx.fillRect(0, 0, width, height)
+
+  const cyanGlow = ctx.createRadialGradient(80, 80, 10, 80, 80, 420)
+  cyanGlow.addColorStop(0, 'rgba(34,211,238,0.16)')
+  cyanGlow.addColorStop(1, 'rgba(34,211,238,0)')
+  ctx.fillStyle = cyanGlow
+  ctx.fillRect(0, 0, 520, 520)
+
+  const violetGlow = ctx.createRadialGradient(width - 40, height - 40, 10, width - 40, height - 40, 480)
+  violetGlow.addColorStop(0, `rgba(${ar},${ag},${ab},0.18)`)
+  violetGlow.addColorStop(1, 'rgba(8,6,26,0)')
+  ctx.fillStyle = violetGlow
+  ctx.fillRect(width - 560, height - 560, 560, 560)
+
+  ctx.strokeStyle = `rgba(${ar},${ag},${ab},0.08)`
+  ctx.lineWidth = 1.5
+  for (let i = 0; i < 7; i++) {
+    const x0 = 80 + i * 280
+    ctx.beginPath()
+    ctx.moveTo(x0, 0)
+    ctx.lineTo(x0 + 220, height)
+    ctx.stroke()
+  }
+
+  const vig = ctx.createRadialGradient(960, 540, 380, 960, 540, 920)
+  vig.addColorStop(0, 'rgba(0,0,0,0)')
+  vig.addColorStop(1, 'rgba(4,2,14,0.55)')
+  ctx.fillStyle = vig
+  ctx.fillRect(0, 0, width, height)
+  ctx.restore()
+}
+
+function drawPrismExtraThumbs(
+  ctx: CanvasRenderingContext2D,
+  slot: LayoutSlot,
+  extras: PlayerSlot['characters'],
+  place: number,
+  pack: PackConfig | null,
+  images: Map<string, HTMLImageElement>,
+  doc: Top8Doc,
+  artH: number,
+  accentRgb: [number, number, number],
+) {
+  const [ar, ag, ab] = accentRgb
+  const gap = 6
+  const pad = 12
+  const maxThumb = place === 1 ? 62 : slot.w >= 480 ? 48 : 38
+  const count = extras.length
+  let thumb = maxThumb
+  const maxRowW = slot.w * 0.46
+  if (count * thumb + (count - 1) * gap > maxRowW) {
+    thumb = Math.max(26, Math.floor((maxRowW - (count - 1) * gap) / count))
+  }
+  const totalW = count * thumb + (count - 1) * gap
+  let x = slot.x + slot.w - pad - totalW
+  const y = slot.y + artH - pad - thumb
+  const r = thumb / 2
+
+  extras.forEach((pick, i) => {
+    const img = images.get(`${slot.playerIndex}:${i + 1}`)
+    const cx = x + r
+    const cy = y + r
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(cx + 2, cy + 3, r, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'
+    ctx.fill()
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fillStyle = '#0c0a1c'
+    ctx.fill()
+    ctx.clip()
+    if (img) {
+      const eyes = resolvePickEyes(pick, pack, img)
+      drawFaceThumb(
+        ctx,
+        img,
+        x,
+        y,
+        thumb,
+        eyes,
+        combinedArtScale(pick.artScale, doc.globalArtScale),
+      )
+    }
+    ctx.restore()
+    ctx.beginPath()
+    ctx.arc(cx, cy, r - 1, 0, Math.PI * 2)
+    ctx.strokeStyle = place === 1 ? '#22d3ee' : `rgb(${ar},${ag},${ab})`
+    ctx.lineWidth = 2
+    ctx.stroke()
+    x += thumb + gap
+  })
+}
+
+function renderPrismPlayerSlot(
+  ctx: CanvasRenderingContext2D,
+  slot: LayoutSlot,
+  player: PlayerSlot,
+  pack: PackConfig | null,
+  images: Map<string, HTMLImageElement>,
+  doc: Top8Doc,
+  charNames: Map<string, string>,
+  accentRgb: [number, number, number],
+) {
+  const place = player.placement
+  const [ar, ag, ab] = accentRgb
+  const accent = `rgb(${ar},${ag},${ab})`
+  const cyan = '#22d3ee'
+  const playerFont = doc.playerFontId
+  const rankFont = doc.rankFontId
+  const plateH = prismPlateHeight(place, slot.h)
+  const cut = place === 1 ? 22 : 14
+  const artH = Math.max(40, slot.h - plateH)
+  const boxStyle = slot.boxStyle ?? doc.defaultBoxStyle
+  const mainFrame = images.get(boxFrameKey(slot.playerIndex, 'main'))
+  const team = teamMembersForRender(doc, player)
+  const extras = team ? [] : extraCharactersForRender(player)
+  const showExtraCharNames = doc.showExtraCharNames !== false
+  const radius = slot.radius
+  const tc = effectiveThemeConfig(doc)
+  const handle = formatTwitterHandle(player)
+
+  ctx.save()
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'
+  ctx.shadowBlur = place === 1 ? 18 : 8
+  ctx.shadowOffsetY = 3
+  roundRect(ctx, slot.x, slot.y, slot.w, slot.h, radius)
+  ctx.fillStyle = '#0c0a1c'
+  ctx.fill()
+  ctx.restore()
+
+  ctx.save()
+  roundRect(ctx, slot.x, slot.y, slot.w, artH, radius)
+  ctx.clip()
+
+  const boxAlpha = Math.min(1, Math.max(0, doc.playerBoxOpacity ?? 1))
+  if (boxAlpha > 0) {
+    ctx.fillStyle = resolveBoxFill(place, doc, boxStyle, boxAlpha)
+    ctx.fillRect(slot.x, slot.y, slot.w, artH)
+  }
+
+  const prismArt: ArtRect = { x: slot.x, y: slot.y, w: slot.w, h: artH }
+  const prismBoost = (place === 1 ? 1.12 : 1.06) * tc.slotArtBoost
+  const main = player.characters[0]
+  const art = images.get(`${slot.playerIndex}:0`)
+  if (team) {
+    drawTeamPortraits(
+      ctx,
+      prismArt,
+      slot,
+      team,
+      pack,
+      images,
+      doc,
+      prismBoost,
+      tc.artCoverMultiplier,
+      slot.focusX,
+      slot.focusY,
+    )
+  } else if (art && hasCharArt(main)) {
+    const eyes = resolvePickEyes(main, pack, art)
+    drawCharacterInRect(
+      ctx,
+      art,
+      prismArt,
+      slot.focusX,
+      slot.focusY,
+      eyes,
+      combinedArtScale(main?.artScale, doc.globalArtScale) * prismBoost,
+      tc.artCoverMultiplier,
+    )
+  } else {
+    ctx.fillStyle = 'rgba(244,241,255,0.08)'
+    ctx.font = canvasFont(Math.min(artH, slot.w) * 0.28, rankFont, '700', 'orbitron')
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(String(place), slot.x + slot.w / 2, slot.y + artH / 2)
+    ctx.textAlign = 'left'
+  }
+
+  const veil = ctx.createLinearGradient(slot.x, slot.y + artH * 0.48, slot.x, slot.y + artH)
+  veil.addColorStop(0, 'rgba(8,6,26,0)')
+  veil.addColorStop(0.55, 'rgba(8,6,26,0.35)')
+  veil.addColorStop(1, 'rgba(8,6,26,0.88)')
+  ctx.fillStyle = veil
+  ctx.fillRect(slot.x, slot.y, slot.w, artH)
+  if (team) drawTeamMemberLabels(ctx, prismArt, team, playerFont, 8)
+  ctx.restore()
+
+  if (mainFrame) {
+    drawFrameImage(ctx, mainFrame, slot.x, slot.y, slot.w, artH, radius)
+  }
+
+  const plateY = slot.y + artH
+  ctx.save()
+  prismPlatePath(ctx, slot.x, plateY, slot.w, plateH, cut)
+  const plateFill = ctx.createLinearGradient(slot.x, plateY, slot.x + slot.w, plateY)
+  if (place === 1) {
+    plateFill.addColorStop(0, `rgba(${ar},${ag},${ab},0.92)`)
+    plateFill.addColorStop(0.55, 'rgba(18,12,42,0.96)')
+    plateFill.addColorStop(1, 'rgba(12,10,32,0.96)')
+  } else {
+    plateFill.addColorStop(0, 'rgba(16,12,36,0.96)')
+    plateFill.addColorStop(1, 'rgba(10,8,24,0.96)')
+  }
+  ctx.fillStyle = plateFill
+  ctx.fill()
+  ctx.restore()
+
+  const name = displayName(player)
+  const namePad = cut + 10
+  const nameMax = slot.w - namePad - 16
+  const nameSize = fitText(ctx, name, nameMax, slot.nameSize, '800', playerFont)
+  ctx.font = canvasFont(nameSize, playerFont, '800')
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = '#f4f1ff'
+  const nameY = handle ? plateY + plateH * 0.38 : plateY + plateH / 2
+  ctx.fillText(name, slot.x + namePad, nameY)
+  if (handle) {
+    const ts = fitText(ctx, handle, nameMax, 12, '500', playerFont)
+    ctx.font = canvasFont(ts, playerFont, '500')
+    ctx.fillStyle = cyan
+    ctx.fillText(handle, slot.x + namePad, plateY + plateH * 0.72)
+  }
+
+  if (showExtraCharNames) {
+    const roster = characterLine(player, charNames, doc.teamMode)
+    if (roster && !handle && plateH >= 42) {
+      const rs = fitText(ctx, roster, nameMax, 11, '500', playerFont)
+      ctx.font = canvasFont(rs, playerFont, '500')
+      ctx.fillStyle = 'rgba(244,241,255,0.62)'
+      ctx.textBaseline = 'bottom'
+      ctx.fillText(roster, slot.x + namePad, plateY - 8)
+      ctx.textBaseline = 'middle'
+    }
+  }
+
+  if (extras.length > 0) {
+    drawPrismExtraThumbs(ctx, slot, extras, place, pack, images, doc, artH, accentRgb)
+  }
+
+  ctx.save()
+  roundRect(ctx, slot.x, slot.y, slot.w, slot.h, radius)
+  ctx.strokeStyle = place === 1 ? cyan : `rgba(${ar},${ag},${ab},0.85)`
+  ctx.lineWidth = place === 1 ? 2 : 1.5
+  ctx.stroke()
+  ctx.restore()
+
+  if (place === 1) {
+    const gemX = slot.x + slot.w - 28
+    const gemY = slot.y + 24
+    ctx.save()
+    ctx.beginPath()
+    ctx.moveTo(gemX, gemY - 9)
+    ctx.lineTo(gemX + 7, gemY)
+    ctx.lineTo(gemX, gemY + 9)
+    ctx.lineTo(gemX - 7, gemY)
+    ctx.closePath()
+    const gem = ctx.createLinearGradient(gemX - 8, gemY - 8, gemX + 8, gemY + 8)
+    gem.addColorStop(0, cyan)
+    gem.addColorStop(1, accent)
+    ctx.fillStyle = gem
+    ctx.fill()
+    ctx.restore()
+  }
+
+  const rankText = rankLabel(place)
+  ctx.save()
+  ctx.font = canvasFont(slot.placeSize, rankFont, '700', 'orbitron')
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'left'
+  const rankX = slot.x + 14
+  const rankY = slot.y + 10
+  const rankW = ctx.measureText(rankText).width
+  const rankH = slot.placeSize * 0.78
+  roundRect(ctx, rankX - 8, rankY - 4, rankW + 16, rankH + 8, 8)
+  ctx.fillStyle = 'rgba(8,6,26,0.78)'
+  ctx.fill()
+  ctx.lineJoin = 'round'
+  ctx.miterLimit = 2
+  ctx.lineWidth = place === 1 ? 6 : 5
+  ctx.strokeStyle = 'rgba(8,6,26,0.95)'
+  ctx.fillStyle = place === 1 ? cyan : '#f4f1ff'
+  ctx.strokeText(rankText, rankX, rankY)
+  ctx.fillText(rankText, rankX, rankY)
+  ctx.restore()
+}
+
 function drawPlayerIdentity(
   ctx: CanvasRenderingContext2D,
   slot: LayoutSlot,
@@ -626,35 +1081,41 @@ function drawPlayerIdentity(
   playerFont: string,
   showExtraCharNames: boolean,
   twitterH: number,
+  teamMode = false,
   nameMaxOverride?: number,
+  centerName = false,
 ) {
   const name = displayName(player)
   const nameMax = nameMaxOverride ?? slot.w - 24
   const handle = formatTwitterHandle(player)
+  const textX = (pad: number) => (centerName ? slot.x + slot.w / 2 : slot.x + pad)
+  if (centerName) ctx.textAlign = 'center'
 
   if (idStyle === 'overlay') {
     ctx.fillStyle = '#f7f3ea'
     const ns = fitText(ctx, name, nameMax, slot.nameSize, '800', playerFont)
-    ctx.font = `800 ${ns}px ${playerFont}`
+    ctx.font = canvasFont(ns, playerFont, '800')
     ctx.textBaseline = 'bottom'
     ctx.lineWidth = 5
     ctx.strokeStyle = 'rgba(0,0,0,0.75)'
     const nameY = slot.y + slot.h - 14
+    const nameX = textX(16)
     if (handle) {
       const ts = fitText(ctx, handle, nameMax, 14, '500', playerFont)
-      ctx.font = `500 ${ts}px ${playerFont}`
+      ctx.font = canvasFont(ts, playerFont, '500')
       ctx.fillStyle = 'rgba(247,243,234,0.78)'
       ctx.strokeStyle = 'rgba(0,0,0,0.65)'
       ctx.lineWidth = 4
-      ctx.strokeText(handle, slot.x + 16, nameY - ns - 6)
-      ctx.fillText(handle, slot.x + 16, nameY - ns - 6)
+      ctx.strokeText(handle, nameX, nameY - ns - 6)
+      ctx.fillText(handle, nameX, nameY - ns - 6)
       ctx.fillStyle = '#f7f3ea'
-      ctx.font = `800 ${ns}px ${playerFont}`
+      ctx.font = canvasFont(ns, playerFont, '800')
       ctx.lineWidth = 5
       ctx.strokeStyle = 'rgba(0,0,0,0.75)'
     }
-    ctx.strokeText(name, slot.x + 16, nameY)
-    ctx.fillText(name, slot.x + 16, nameY)
+    ctx.strokeText(name, nameX, nameY)
+    ctx.fillText(name, nameX, nameY)
+    if (centerName) ctx.textAlign = 'left'
     return
   }
 
@@ -675,19 +1136,20 @@ function drawPlayerIdentity(
   ctx.fillStyle = '#f7f3ea'
   const nameY = plateY + (place === 1 ? 14 : 10)
   const ns = fitText(ctx, name, nameMax, place === 1 ? 26 : slot.nameSize, '800', playerFont)
-  ctx.font = `800 ${ns}px ${playerFont}`
+  ctx.font = canvasFont(ns, playerFont, '800')
   ctx.textBaseline = 'top'
-  ctx.fillText(name, slot.x + 12, nameY)
+  const nameX = textX(12)
+  ctx.fillText(name, nameX, nameY)
 
   if (showExtraCharNames) {
-    const roster = characterLine(player, charNames)
+    const roster = characterLine(player, charNames, teamMode)
     if (roster) {
       ctx.fillStyle = 'rgba(247,243,234,0.65)'
       const rosterY = nameY + ns + 4
       if (rosterY < plateY + namePlateH - 6) {
         const rs = fitText(ctx, roster, nameMax, 13, '500', playerFont)
-        ctx.font = `500 ${rs}px ${playerFont}`
-        ctx.fillText(roster, slot.x + 12, rosterY)
+        ctx.font = canvasFont(rs, playerFont, '500')
+        ctx.fillText(roster, nameX, rosterY)
       }
     }
   }
@@ -695,11 +1157,12 @@ function drawPlayerIdentity(
   if (handle && twitterH > 0) {
     ctx.fillStyle = 'rgba(247,243,234,0.88)'
     const ts = fitText(ctx, handle, slot.w - 24, 13, '500', playerFont)
-    ctx.font = `500 ${ts}px ${playerFont}`
+    ctx.font = canvasFont(ts, playerFont, '500')
     ctx.textBaseline = 'middle'
-    ctx.fillText(handle, slot.x + 12, plateY + namePlateH + twitterH / 2)
+    ctx.fillText(handle, nameX, plateY + namePlateH + twitterH / 2)
     ctx.textBaseline = 'top'
   }
+  if (centerName) ctx.textAlign = 'left'
 }
 
 function drawParagonPlayerIdentity(
@@ -723,7 +1186,7 @@ function drawParagonPlayerIdentity(
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   const ns = fitText(ctx, name, slot.w - 16, place === 1 ? 26 : slot.nameSize, '800', playerFont)
-  ctx.font = `800 ${ns}px ${playerFont}`
+  ctx.font = canvasFont(ns, playerFont, '800')
   ctx.fillText(name, slot.x + slot.w / 2, plateY + namePlateH / 2)
 
   if (handle && twitterH > 0) {
@@ -732,7 +1195,7 @@ function drawParagonPlayerIdentity(
     ctx.fillRect(slot.x, twitterY, slot.w, twitterH)
     ctx.fillStyle = 'rgba(255,255,255,0.88)'
     const ts = fitText(ctx, handle, slot.w - 12, 13, '500', playerFont)
-    ctx.font = `500 ${ts}px ${playerFont}`
+    ctx.font = canvasFont(ts, playerFont, '500')
     ctx.fillText(handle, slot.x + slot.w / 2, twitterY + twitterH / 2)
   }
 
@@ -795,9 +1258,10 @@ function drawAnimefgcExtraChars(
   _charNames: Map<string, string>,
   variant: 'champion' | 'list',
 ) {
+  if (teamMembersForRender(doc, player)) return
   const eff = effectivePosterSettings(doc)
   const tc = effectiveThemeConfig(doc)
-  const extras = player.characters.slice(1).filter((c) => hasCharArt(c))
+  const extras = extraCharactersForRender(player)
   const extraCount = extras.length
   if (extraCount === 0) return
 
@@ -863,6 +1327,8 @@ function renderAnimefgcChampionSlot(
   const tc = effectiveThemeConfig(doc)
   const namePlateH = tc.animefgcChampBarH
   const artH = slot.h - namePlateH
+  const team = teamMembersForRender(doc, player)
+  const champArt: ArtRect = { x: slot.x, y: slot.y, w: slot.w, h: artH }
   const main = player.characters[0]
   const art = images.get(`${slot.playerIndex}:0`)
 
@@ -871,15 +1337,26 @@ function renderAnimefgcChampionSlot(
   ctx.rect(slot.x, slot.y, slot.w, artH)
   ctx.clip()
 
-  if (art && hasCharArt(main)) {
-    const eyes =
-      main?.customImageDataUrl || !main?.codename || !pack
-        ? undefined
-        : eyesightOf(pack, main.codename, main.skin)
+  if (team) {
+    drawTeamPortraits(
+      ctx,
+      champArt,
+      slot,
+      team,
+      pack,
+      images,
+      doc,
+      tc.animefgcChampArtBoost,
+      tc.artCoverMultiplier,
+      0.56,
+      0.3,
+    )
+  } else if (art && hasCharArt(main)) {
+    const eyes = resolvePickEyes(main, pack, art)
     drawCharacterInRect(
       ctx,
       art,
-      { x: slot.x, y: slot.y, w: slot.w, h: artH },
+      champArt,
       0.56,
       0.30,
       eyes,
@@ -897,6 +1374,7 @@ function renderAnimefgcChampionSlot(
     ctx.fillStyle = veil
     ctx.fillRect(slot.x, slot.y, slot.w, artH)
   }
+  if (team) drawTeamMemberLabels(ctx, champArt, team, playerFont, 96)
   ctx.restore()
 
   drawAnimefgcExtraChars(ctx, slot, player, player.placement, pack, images, doc, charNames, 'champion')
@@ -916,7 +1394,7 @@ function renderAnimefgcChampionSlot(
   const rankY = plateY - 10
   const rankSize = Math.max(slot.placeSize, 84)
   ctx.fillStyle = rankColor(1, '#f5c518')
-  ctx.font = `italic 800 ${rankSize}px ${rankFont}`
+  ctx.font = canvasFont(rankSize, rankFont, '800', 'bebas', 'italic')
   ctx.textBaseline = 'bottom'
   ctx.textAlign = 'left'
   drawOutlinedText(ctx, '1ST', slot.x + 28, rankY, rankColor(1, '#f5c518'), 'rgba(0,0,0,0.82)', 5)
@@ -926,11 +1404,11 @@ function renderAnimefgcChampionSlot(
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   const ns = fitText(ctx, name, slot.w - 48, 42, '800', playerFont)
-  ctx.font = `800 ${ns}px ${playerFont}`
+  ctx.font = canvasFont(ns, playerFont, '800')
   const nameY = handle ? plateY + namePlateH * 0.4 : plateY + namePlateH / 2
   drawOutlinedText(ctx, name, slot.x + slot.w / 2, nameY, '#fffefb', 'rgba(0,0,0,0.55)', 3)
   if (handle) {
-    ctx.font = `600 16px ${playerFont}`
+    ctx.font = canvasFont(16, playerFont, '600')
     drawOutlinedText(
       ctx,
       handle,
@@ -963,6 +1441,8 @@ function renderAnimefgcListSlot(
   const textPad = 16
   const rankSize = 28
 
+  const team = teamMembersForRender(doc, player)
+  const listArt: ArtRect = { x: slot.x, y: slot.y, w: slot.w, h: slot.h }
   const main = player.characters[0]
   const art = images.get(`${slot.playerIndex}:0`)
   ctx.save()
@@ -974,15 +1454,26 @@ function renderAnimefgcListSlot(
     ctx.rect(slot.x, slot.y, slot.w, slot.h)
     ctx.clip()
   }
-  if (art && hasCharArt(main)) {
-    const eyes =
-      main?.customImageDataUrl || !main?.codename || !pack
-        ? undefined
-        : eyesightOf(pack, main.codename, main.skin)
+  if (team) {
+    drawTeamPortraits(
+      ctx,
+      listArt,
+      slot,
+      team,
+      pack,
+      images,
+      doc,
+      tc.animefgcListArtBoost,
+      tc.artCoverMultiplier,
+      0.5,
+      0.28,
+    )
+  } else if (art && hasCharArt(main)) {
+    const eyes = resolvePickEyes(main, pack, art)
     drawCharacterInRect(
       ctx,
       art,
-      { x: slot.x, y: slot.y, w: slot.w, h: slot.h },
+      listArt,
       0.5,
       0.28,
       eyes,
@@ -993,11 +1484,12 @@ function renderAnimefgcListSlot(
     ctx.fillStyle = 'rgba(255,255,255,0.04)'
     ctx.fillRect(slot.x, slot.y, slot.w, slot.h)
     ctx.fillStyle = 'rgba(255,255,255,0.08)'
-    ctx.font = `800 ${Math.min(slot.w, slot.h) * 0.35}px ${rankFont}`
+    ctx.font = canvasFont(Math.min(slot.w, slot.h) * 0.35, rankFont, '800', 'bebas')
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(String(place), slot.x + slot.w / 2, slot.y + slot.h / 2)
   }
+  if (team) drawTeamMemberLabels(ctx, listArt, team, playerFont, 4)
   ctx.restore()
 
   drawAnimefgcExtraChars(ctx, slot, player, place, pack, images, doc, charNames, 'list')
@@ -1012,7 +1504,7 @@ function renderAnimefgcListSlot(
   }
 
   const rankText = rankLabel(place)
-  ctx.font = `italic 800 ${rankSize}px ${rankFont}`
+  ctx.font = canvasFont(rankSize, rankFont, '800', 'bebas', 'italic')
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
   drawOutlinedText(
@@ -1030,10 +1522,10 @@ function renderAnimefgcListSlot(
   const rightX = slot.x + slot.w - textPad
   const midY = slot.y + slot.h / 2
   ctx.textAlign = 'right'
-  ctx.font = `800 ${listTypography.nameSize}px ${playerFont}`
+  ctx.font = canvasFont(listTypography.nameSize, playerFont, '800')
   if (handle) {
     drawOutlinedText(ctx, name, rightX, midY - 12, '#f7f3ea', 'rgba(0,0,0,0.78)', 4)
-    ctx.font = `500 ${listTypography.handleSize}px ${playerFont}`
+    ctx.font = canvasFont(listTypography.handleSize, playerFont, '500')
     drawOutlinedText(
       ctx,
       handle,
@@ -1063,8 +1555,8 @@ function renderAnimefgcPlayerSlot(
 ) {
   const [ar, ag, ab] = accentRgb
   const accent = `rgb(${ar},${ag},${ab})`
-  const playerFont = fontFamily(doc.playerFontId)
-  const rankFont = fontFamily(doc.rankFontId, 'bebas')
+  const playerFont = doc.playerFontId
+  const rankFont = doc.rankFontId
   const typography = listTypography ?? { nameSize: 26, handleSize: 15 }
 
   if (player.placement === 1) {
@@ -1128,24 +1620,31 @@ function renderPlayerSlot(
     return
   }
 
+  if (layoutTheme === 'prism') {
+    renderPrismPlayerSlot(ctx, slot, player, pack, images, doc, charNames, accentRgb)
+    return
+  }
+
   const place = player.placement
   const eff = effectivePosterSettings(doc)
   const tc = effectiveThemeConfig(doc)
   const boxStyle = slot.boxStyle ?? doc.defaultBoxStyle
   const accent = resolveBoxAccent(place, doc, boxStyle, 'main')
   const [ar, ag, ab] = accentRgb
-  const playerFont = fontFamily(doc.playerFontId)
-  const rankFont = fontFamily(doc.rankFontId, 'bebas')
+  const playerFont = doc.playerFontId
+  const rankFont = doc.rankFontId
   const mainFrame = images.get(boxFrameKey(slot.playerIndex, 'main'))
   const extraStyle: ExtraCharStyleId = eff.extraCharStyleId
   const idStyle: PlayerIdStyleId = eff.playerIdStyleId
   const effectiveId = resolveEffectivePlayerIdStyle(idStyle, eff.playerIdLayout)
   const tokon = layoutTheme === 'tokon'
   const paragon = layoutTheme === 'paragon'
-  const extras = player.characters.slice(1).filter((c) => hasCharArt(c))
+  const team = teamMembersForRender(doc, player)
+  const centerTeamName = doc.teamMode && isSquaresLayout(doc)
+  const extras = team ? [] : extraCharactersForRender(player)
   const extraCount = extras.length
   const showExtraCharNames = doc.showExtraCharNames !== false
-  const hasRoster = showExtraCharNames && characterLine(player, charNames).length > 0
+  const hasRoster = showExtraCharNames && characterLine(player, charNames, doc.teamMode).length > 0
   const hangGap = resolveHangGap(idStyle, eff.playerIdLayout)
   const twitterH = twitterStripHeight(player, tc.twitterStripH)
   const paragonTwitterH = paragon ? twitterH : 0
@@ -1208,11 +1707,22 @@ function renderPlayerSlot(
 
   const main = player.characters[0]
   const art = images.get(`${slot.playerIndex}:0`)
-  if (art && hasCharArt(main)) {
-    const eyes =
-      main?.customImageDataUrl || !main?.codename || !pack
-        ? undefined
-        : eyesightOf(pack, main.codename, main.skin)
+  if (team) {
+    drawTeamPortraits(
+      ctx,
+      artRect,
+      slot,
+      team,
+      pack,
+      images,
+      doc,
+      tc.slotArtBoost,
+      tc.artCoverMultiplier,
+      slot.focusX,
+      slot.focusY,
+    )
+  } else if (art && hasCharArt(main)) {
+    const eyes = resolvePickEyes(main, pack, art)
     drawCharacterInRect(
       ctx,
       art,
@@ -1225,7 +1735,7 @@ function renderPlayerSlot(
     )
   } else {
     ctx.fillStyle = 'rgba(255,255,255,0.06)'
-    ctx.font = `800 ${Math.min(artRect.w, artRect.h) * 0.4}px ${rankFont}`
+    ctx.font = canvasFont(Math.min(artRect.w, artRect.h) * 0.4, rankFont, '800', 'bebas')
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(String(place), artRect.x + artRect.w / 2, artRect.y + artRect.h / 2)
@@ -1275,6 +1785,13 @@ function renderPlayerSlot(
     ctx.fillRect(slot.x, slot.y, slot.w, veilEnd)
   }
 
+  if (team) {
+    const handle = formatTwitterHandle(player)
+    const labelInset =
+      effectiveId === 'overlay' ? slot.nameSize + (handle ? 34 : 16) : 8
+    drawTeamMemberLabels(ctx, { ...artRect, h: clipH }, team, playerFont, labelInset)
+  }
+
   ctx.restore()
 
   if (extraCount > 0) {
@@ -1299,7 +1816,7 @@ function renderPlayerSlot(
       !paragon,
     )
   } else {
-    ctx.font = `${tokon ? 'italic ' : ''}800 ${slot.placeSize}px ${rankFont}`
+    ctx.font = canvasFont(slot.placeSize, rankFont, '800', 'bebas', tokon ? 'italic' : '')
     ctx.textBaseline = 'top'
     ctx.strokeStyle = 'rgba(0,0,0,0.65)'
     ctx.lineWidth = tokon ? 3 : paragon ? 0 : 4
@@ -1404,6 +1921,9 @@ function renderPlayerSlot(
       playerFont,
       showExtraCharNames,
       twitterH,
+      doc.teamMode,
+      undefined,
+      centerTeamName,
     )
   } else {
     const nameMax = slot.w - 28
@@ -1420,7 +1940,9 @@ function renderPlayerSlot(
       playerFont,
       showExtraCharNames,
       twitterH,
+      doc.teamMode,
       nameMax,
+      centerTeamName,
     )
   }
 
@@ -1522,7 +2044,10 @@ export function renderTop8(
 
   const [ar, ag, ab] = hexToRgb(doc.accent)
   const plainBg =
-    layout.theme === 'paragon' || layout.theme === 'animefgc' || layout.theme === 'ebifc'
+    layout.theme === 'paragon' ||
+    layout.theme === 'animefgc' ||
+    layout.theme === 'ebifc' ||
+    layout.theme === 'prism'
   if (!bg && !plainBg) {
     ctx.strokeStyle = `rgba(${ar},${ag},${ab},0.08)`
     ctx.lineWidth = 1
@@ -1536,8 +2061,12 @@ export function renderTop8(
   if (!bg && layout.theme === 'ebifc') {
     drawEbifcBackdrop(ctx, width, height)
   }
+  if (!bg && layout.theme === 'prism') {
+    drawPrismBackdrop(ctx, width, height, [ar, ag, ab])
+  }
 
   const isAnimefgc = layout.theme === 'animefgc'
+  const isPrism = layout.theme === 'prism'
   const textModes = resolveLayoutTextModes(doc)
 
   const headerBg = images.get(headerImageKey())
@@ -1555,7 +2084,7 @@ export function renderTop8(
     ctx.restore()
   }
 
-  if (!isAnimefgc) {
+  if (!isAnimefgc && !isPrism) {
     drawHeader(
       ctx,
       doc,
@@ -1584,7 +2113,7 @@ export function renderTop8(
   const charNames = new Map(characters.map((c) => [c.codename, c.name]))
 
   const animefgcListTypography = isAnimefgc
-    ? computeAnimefgcListTypography(ctx, doc, layout.slots, fontFamily(doc.playerFontId))
+    ? computeAnimefgcListTypography(ctx, doc, layout.slots, doc.playerFontId)
     : undefined
 
   for (const slot of layout.slots) {
@@ -1609,11 +2138,11 @@ export function renderTop8(
     )
   }
 
-  if (isAnimefgc) {
+  if (isAnimefgc || isPrism) {
     drawHeader(
       ctx,
       doc,
-      doc.headerStyleId ?? 'animefgc',
+      doc.headerStyleId ?? (isPrism ? 'prism' : 'animefgc'),
       width,
       [ar, ag, ab],
       images,
@@ -1628,10 +2157,9 @@ export function renderTop8(
     if (creditsBox) {
       drawCreditsFromLayout(ctx, doc, creditsBox, isParagon)
     } else {
-      const creditsFont = fontFamily(doc.titleFontId)
       ctx.fillStyle =
         isParagon ? 'rgba(26,31,46,0.45)' : isAnimefgc ? 'rgba(247,243,234,0.4)' : 'rgba(247,243,234,0.45)'
-      ctx.font = `500 12px ${creditsFont}`
+      ctx.font = canvasFont(12, doc.titleFontId, '500')
       ctx.textBaseline = 'bottom'
       ctx.textAlign = 'left'
       ctx.fillText(

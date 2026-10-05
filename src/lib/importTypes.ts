@@ -1,8 +1,17 @@
-export type ImportedPlayer = {
-  placement: number
+/** 导入阶段的队员（角色名尚未匹配到素材包） */
+export type ImportedMember = {
   tag: string
   prefix: string
   characterNames: string[]
+}
+
+export type ImportedPlayer = {
+  placement: number
+  /** 单人赛为选手名；组队赛为队名 */
+  tag: string
+  prefix: string
+  characterNames: string[]
+  members?: ImportedMember[]
 }
 
 export type ImportSource = 'startgg' | 'challonge' | 'parrygg'
@@ -14,6 +23,8 @@ export type TournamentImport = {
   date: string
   videogameName: string
   numEntrants: number | null
+  /** 组队赛（多名队员组成一个名次） */
+  isTeam: boolean
   players: ImportedPlayer[]
 }
 
@@ -26,6 +37,8 @@ export function emptyImportedPlayers(): ImportedPlayer[] {
   }))
 }
 
+const MAX_IMPORTED_MEMBERS = 5
+
 /** 保留原始名次（含并列），取前 8 条有效名次记录。 */
 export function assignTop8Slots(
   entries: Array<{
@@ -33,6 +46,7 @@ export function assignTop8Slots(
     tag: string
     prefix?: string
     characterNames?: string[]
+    members?: ImportedMember[]
   }>,
 ): ImportedPlayer[] {
   const players = emptyImportedPlayers()
@@ -42,12 +56,25 @@ export function assignTop8Slots(
     .slice(0, 8)
 
   ranked.forEach((entry, index) => {
+    const members = (entry.members ?? [])
+      .map((m) => ({
+        tag: m.tag.trim(),
+        prefix: (m.prefix ?? '').trim(),
+        characterNames: m.characterNames ?? [],
+      }))
+      .filter((m) => m.tag)
+      .slice(0, MAX_IMPORTED_MEMBERS)
     players[index] = {
       placement: entry.placement,
       tag: entry.tag,
       prefix: entry.prefix ?? '',
       characterNames: entry.characterNames ?? [],
+      members: members.length > 0 ? members : undefined,
     }
   })
   return players
+}
+
+export function importIsTeam(players: ImportedPlayer[]): boolean {
+  return players.some((p) => (p.members?.length ?? 0) > 1)
 }

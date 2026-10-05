@@ -258,7 +258,9 @@ export function computeSlotArtRect(
         : slot.h
       : opts.theme === 'ebifc'
         ? slot.h - (place === 1 ? 56 : 44)
-        : resolveArtHeight(slot, place, opts.playerIdStyleId, hasRoster, opts.playerIdLayout)
+        : opts.theme === 'prism'
+          ? slot.h - (place === 1 ? 56 : slot.h < 280 ? 34 : 42)
+          : resolveArtHeight(slot, place, opts.playerIdStyleId, hasRoster, opts.playerIdLayout)
 
   return {
     x: slot.x,

@@ -1,13 +1,33 @@
 import { builtInLayoutDocDefaults } from './layouts'
 import { defaultDoc, emptyPlayers, normalizeLoadedDoc } from './storage'
+import { MAX_TEAM_MEMBERS } from './teamMode'
 import type {
   BuiltInLayoutId,
   CharacterPick,
   CustomLayoutDef,
   PlayerSlot,
   PosterLocale,
+  TeamMember,
   Top8Doc,
 } from '../types'
+
+export type Top8ApiCharacter = {
+  codename?: string
+  skin?: number
+  /** 自定义立绘：data URL 或 /user-assets/... 路径 */
+  customImageUrl?: string
+  artScale?: number
+  imageFocusX?: number
+  imageFocusY?: number
+}
+
+/** 组队赛队员 */
+export type Top8ApiMember = {
+  tag?: string
+  prefix?: string
+  twitter?: string
+  characters?: Top8ApiCharacter[]
+}
 
 /** 外部 API 精简选手结构 */
 export type Top8ApiPlayer = {
@@ -15,13 +35,9 @@ export type Top8ApiPlayer = {
   prefix?: string
   twitter?: string
   placement?: number
-  characters?: Array<{
-    codename?: string
-    skin?: number
-    /** 自定义立绘：data URL 或 /user-assets/... 路径 */
-    customImageUrl?: string
-    artScale?: number
-  }>
+  characters?: Top8ApiCharacter[]
+  /** 组队赛队员；与 teamMode 一起使用 */
+  members?: Top8ApiMember[]
 }
 
 /** 外部程序调用 POST /api/v1/top8/render 的请求体 */
@@ -49,6 +65,8 @@ export type Top8ApiRequest = {
   titleFontId?: string
   playerFontId?: string
   rankFontId?: string
+  /** 组队赛：每个名次并排画队员立绘 */
+  teamMode?: boolean
   /** 选手列表（1–8 名；不足补空） */
   players?: Top8ApiPlayer[]
   /** 直接传入完整/部分 Top8Doc（优先级高于上面字段，会与默认合并） */
@@ -69,29 +87,53 @@ export type Top8ApiJobMeta = {
   doc: Top8Doc
 }
 
+function toCharacterPick(c: Top8ApiCharacter): CharacterPick {
+  return {
+    codename: c.codename ?? '',
+    skin: typeof c.skin === 'number' ? c.skin : 0,
+    customImageDataUrl: c.customImageUrl ?? '',
+    artScale:
+      typeof c.artScale === 'number' && Number.isFinite(c.artScale)
+        ? Math.min(2.5, Math.max(0.5, c.artScale))
+        : 1,
+    imageFocusX:
+      typeof c.imageFocusX === 'number' && Number.isFinite(c.imageFocusX)
+        ? Math.min(1, Math.max(0, c.imageFocusX))
+        : undefined,
+    imageFocusY:
+      typeof c.imageFocusY === 'number' && Number.isFinite(c.imageFocusY)
+        ? Math.min(1, Math.max(0, c.imageFocusY))
+        : undefined,
+  }
+}
+
+function toTeamMember(raw: Top8ApiMember): TeamMember {
+  return {
+    tag: raw.tag ?? '',
+    prefix: raw.prefix ?? '',
+    twitter: raw.twitter ?? '',
+    characters: (raw.characters ?? []).slice(0, 1).map(toCharacterPick),
+  }
+}
+
 function toApiPlayers(list: Top8ApiPlayer[] | undefined): PlayerSlot[] {
   const base = emptyPlayers()
   if (!list?.length) return base
   return base.map((slot, i) => {
     const raw = list[i]
     if (!raw) return slot
-    const characters: CharacterPick[] = (raw.characters ?? [])
-      .slice(0, 3)
-      .map((c) => ({
-        codename: c.codename ?? '',
-        skin: typeof c.skin === 'number' ? c.skin : 0,
-        customImageDataUrl: c.customImageUrl ?? '',
-        artScale:
-          typeof c.artScale === 'number' && Number.isFinite(c.artScale)
-            ? Math.min(2.5, Math.max(0.5, c.artScale))
-            : 1,
-      }))
+    const characters: CharacterPick[] = (raw.characters ?? []).slice(0, 3).map(toCharacterPick)
+    const members = (raw.members ?? [])
+      .slice(0, MAX_TEAM_MEMBERS)
+      .map(toTeamMember)
+      .filter((member) => member.tag.trim() || member.characters.some((c) => c.codename || c.customImageDataUrl))
     return {
       placement: raw.placement ?? i + 1,
       tag: raw.tag ?? '',
       prefix: raw.prefix ?? '',
       twitter: raw.twitter ?? '',
       characters,
+      members: members.length > 0 ? members : undefined,
     }
   })
 }
@@ -143,6 +185,7 @@ export function buildTop8DocFromApiRequest(req: Top8ApiRequest): Top8Doc {
     titleFontId: req.titleFontId ?? req.doc?.titleFontId ?? layoutDefaults.titleFontId ?? base.titleFontId,
     playerFontId: req.playerFontId ?? req.doc?.playerFontId ?? layoutDefaults.playerFontId ?? base.playerFontId,
     rankFontId: req.rankFontId ?? req.doc?.rankFontId ?? layoutDefaults.rankFontId ?? base.rankFontId,
+    teamMode: req.teamMode === true || req.doc?.teamMode === true,
     players: req.players ? toApiPlayers(req.players) : (req.doc?.players ?? base.players),
     ...(req.doc
       ? {

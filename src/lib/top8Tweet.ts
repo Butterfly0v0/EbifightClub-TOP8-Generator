@@ -58,10 +58,24 @@ export function buildTop8TweetText(
       const medal = RANK_MEDAL[player.placement] ?? ''
       const rank = ordinalLabel(player.placement)
       const name = playerDisplayName(player)
-      const charName = characterNamesForTweet(player, charNames)
-      const charPart = charName ? `(${charName})` : ''
       const twitter = formatTwitter(player.twitter)
       const twitterPart = twitter ? ` ${twitter}` : ''
+      if (doc.teamMode && player.members?.length) {
+        const roster = player.members
+          .filter((member) => member.tag.trim() || member.characters.some((c) => c.codename || c.customImageDataUrl))
+          .map((member) => {
+            const who = [member.prefix.trim(), member.tag.trim()].filter(Boolean).join(' | ') || 'TBD'
+            const charName = characterNamesForTweet(
+              { ...player, characters: member.characters },
+              charNames,
+            )
+            return charName ? `${who} (${charName})` : who
+          })
+          .join(' / ')
+        return `${medal}${rank}: ${name}${roster ? ` — ${roster}` : ''}${twitterPart}`
+      }
+      const charName = characterNamesForTweet(player, charNames)
+      const charPart = charName ? `(${charName})` : ''
       return `${medal}${rank}: ${name}${charPart}${twitterPart}`
     })
 

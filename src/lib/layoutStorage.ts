@@ -34,7 +34,8 @@ function normalizeHeader(raw: Partial<HeaderRegion> | undefined, styleId?: strin
       styleId === 'tokon' ||
       styleId === 'paragon' ||
       styleId === 'animefgc' ||
-      styleId === 'ebifc'
+      styleId === 'ebifc' ||
+      styleId === 'prism'
       ? styleId
       : 'compact',
   )
@@ -131,7 +132,9 @@ export function normalizeCustomLayout(raw: unknown): CustomLayoutDef | null {
             ? 'animefgc'
             : o.theme === 'ebifc'
               ? 'ebifc'
-              : undefined,
+              : o.theme === 'prism'
+                ? 'prism'
+                : undefined,
     recommendedHeaderStyleId:
       o.recommendedHeaderStyleId === 'banner' ||
       o.recommendedHeaderStyleId === 'hero' ||
@@ -139,7 +142,8 @@ export function normalizeCustomLayout(raw: unknown): CustomLayoutDef | null {
       o.recommendedHeaderStyleId === 'tokon' ||
       o.recommendedHeaderStyleId === 'paragon' ||
       o.recommendedHeaderStyleId === 'animefgc' ||
-      o.recommendedHeaderStyleId === 'ebifc'
+      o.recommendedHeaderStyleId === 'ebifc' ||
+      o.recommendedHeaderStyleId === 'prism'
         ? o.recommendedHeaderStyleId
         : undefined,
     recommendedExtraCharStyleId:
@@ -168,6 +172,7 @@ export function normalizeCustomLayout(raw: unknown): CustomLayoutDef | null {
       o.headerStyleId === 'paragon' ||
       o.headerStyleId === 'animefgc' ||
       o.headerStyleId === 'ebifc' ||
+      o.headerStyleId === 'prism' ||
       o.headerStyleId === 'compact'
         ? o.headerStyleId
         : undefined,
@@ -217,7 +222,8 @@ export function normalizeCustomLayout(raw: unknown): CustomLayoutDef | null {
       o.basedOn === 'tokon' ||
       o.basedOn === 'paragon' ||
       o.basedOn === 'animefgc' ||
-      o.basedOn === 'ebifc'
+      o.basedOn === 'ebifc' ||
+      o.basedOn === 'prism'
         ? o.basedOn
         : undefined,
     createdAt: typeof o.createdAt === 'string' ? o.createdAt : new Date().toISOString(),
